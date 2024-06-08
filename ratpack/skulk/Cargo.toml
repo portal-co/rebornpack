@@ -1,0 +1,14 @@
+[package]
+name = "skulk"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow.workspace = true
+either.workspace = true
+id-arena.workspace = true
+lexpr = "0.2.7"
+rat-ast = { version = "0.1.0", path = "../rat-ast" }
+rat-ir = { version = "0.1.0", path = "../rat-ir" }

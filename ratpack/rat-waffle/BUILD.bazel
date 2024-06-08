@@ -1,0 +1,27 @@
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "rat-waffle",
+    srcs = glob([
+        "src/*.rs",
+        "src/**/*.rs",
+    ]),
+    proc_macro_deps = [
+        "@crates//:derive_more",
+    ],
+    deps = [
+        "//ratpack/more-waffle",
+        "//ratpack/rat-ast",
+        "//ratpack/rat-ir",
+        "@crates//:anyhow",
+        "@crates//:castaway",
+        "@crates//:either",
+        "@crates//:id-arena",
+        "@crates//:proc-macro2",
+        "@crates//:quote",
+        "@crates//:syn",
+        "@crates//:waffle",
+    ],
+)

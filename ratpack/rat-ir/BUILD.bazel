@@ -1,0 +1,22 @@
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "rat-ir",
+    srcs = glob([
+        "src/*.rs",
+        "src/**/*.rs",
+    ]),
+    proc_macro_deps = [
+        "@crates//:derive_more",
+    ],
+    deps = [
+        "@crates//:anyhow",
+        "@crates//:castaway",
+        "@crates//:either",
+        "@crates//:id-arena",
+        "@crates//:once_map",
+        "@crates//:serde",
+    ],
+)

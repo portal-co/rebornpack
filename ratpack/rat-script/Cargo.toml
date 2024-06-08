@@ -1,0 +1,22 @@
+[package]
+name = "rat-script"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow.workspace = true
+bitvec = "1.0.1"
+derive_more = "0.99.17"
+either.workspace = true
+id-arena.workspace = true
+lazy_static = "1.4.0"
+nutype = {version="0.4.2",features=["regex"]}
+rat-ast = { version = "0.1.0", path = "../rat-ast" }
+rat-ir = { version = "0.1.0", path = "../rat-ir" }
+regex = "1.10.4"
+relooper = "0.1.0"
+proc-macro2.workspace = true
+quote.workspace = true
+syn.workspace = true

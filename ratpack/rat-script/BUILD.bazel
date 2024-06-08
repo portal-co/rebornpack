@@ -1,0 +1,28 @@
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "rat-script",
+    srcs = glob([
+        "src/*.rs",
+        "src/**/*.rs",
+    ]),
+    proc_macro_deps = [
+        "@crates//:derive_more",
+    ],
+    deps = [
+        "//ratpack/rat-ast",
+        "//ratpack/rat-ir",
+        "@crates//:anyhow",
+        "@crates//:either",
+        "@crates//:id-arena",
+        "@crates//:lazy_static",
+        "@crates//:nutype",
+        "@crates//:proc-macro2",
+        "@crates//:quote",
+        "@crates//:regex",
+        "@crates//:relooper",
+        "@crates//:syn",
+    ],
+)

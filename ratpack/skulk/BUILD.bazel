@@ -1,0 +1,19 @@
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "skulk",
+    srcs = glob([
+        "src/*.rs",
+        "src/**/*.rs",
+    ]),
+    deps = [
+        "@crates//:id-arena",
+        "@crates//:anyhow",
+        "@crates//:either",
+        "//ratpack/rat-ir",
+        "//ratpack/rat-ast",
+        "@crates//:lexpr",
+    ],
+)

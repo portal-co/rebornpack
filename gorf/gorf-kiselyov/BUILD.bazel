@@ -1,0 +1,14 @@
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "gorf-kiselyov",
+    srcs = glob([
+        "src/*.rs",
+        "src/**/*.rs",
+    ]),
+    deps = [
+        "@crates//:lambda_calculus",
+    ],
+)

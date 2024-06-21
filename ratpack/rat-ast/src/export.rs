@@ -18,7 +18,9 @@ impl<X> ToIdAst for Id<X> {
         return A::Var::from(format!("ssa{}", self.index()));
     }
 }
-
+pub trait Emit<X>{
+    fn emit(&self) -> X;
+}
 pub trait ExportAst<O, T, S, Y>: Clone {
     type Var: From<String> + Clone;
     fn get(var: Self::Var, y: &Y) -> Self;
@@ -349,10 +351,26 @@ pub fn render_relooped_func<O, T: ExportTerm<A, O, T, Y, S>, Y, S, A: ReloopAst<
     f: &Func<O, T, Y, S>,
     a: &mut A,
 ) -> anyhow::Result<()> {
+    let cfg = f.domap_ref();
     let x = relooper::reloop(
         f.blocks
             .iter()
-            .map(|a| (a.0, a.1.term.targets().into_iter().collect::<Vec<_>>()))
+            .map(|a| {
+                (
+                    a.0,
+                    a.1.term
+                        .targets()
+                        .into_iter()
+                        .chain(f.blocks.iter().filter_map(|b| {
+                            if rat_ir::dom::dominates(&cfg, Some(b.0), Some(a.0)) {
+                                Some(b.0)
+                            } else {
+                                None
+                            }
+                        }))
+                        .collect::<Vec<_>>(),
+                )
+            })
             .collect(),
         f.entry,
     );

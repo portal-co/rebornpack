@@ -1,0 +1,10 @@
+syntax = "proto3";
+
+package rat.waffle.rt;
+
+message Decl {
+}
+
+message Rt{
+    map<string,Decl> decls = 1;
+}

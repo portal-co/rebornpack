@@ -1,5 +1,5 @@
 use quote::{format_ident, quote};
-use rat_ast::export::{rust::RustOp, ExportTerm};
+use rat_ast::export::{rust::RustOp, Emit, ExportTerm};
 use rat_ir::{
     bi::simple::{Gm, SimpleOp},
     no_push,
@@ -24,6 +24,35 @@ impl CLike for ECMAScript {
 
     fn r#loop(&self, id: u16) -> Self {
         Self(format!("l{id}: while(1){{{}}};", self.0))
+    }
+}
+script!(AssemblyScript);
+impl CLike for AssemblyScript {
+    fn r#break(id: u16) -> Self {
+        Self(format!("break l{id};"))
+    }
+
+    fn r#continue(id: u16) -> Self {
+        Self(format!("continue l{id};"))
+    }
+
+    fn r#loop(&self, id: u16) -> Self {
+        Self(format!("l{id}: while(1){{{}}};", self.0))
+    }
+}
+impl<T: Emit<AssemblyScript>> Emit<AssemblyScript> for Vec<T> {
+    fn emit(&self) -> AssemblyScript {
+        if let [a] = self.as_slice(){
+            return a.emit();
+        } 
+        AssemblyScript(format!(
+            "{{{}}}",
+            self.iter()
+                .enumerate()
+                .map(|(a, b)| format!("p{a}: {}", b.emit()))
+                .collect::<Vec<_>>()
+                .join(",")
+        ))
     }
 }
 script!(C);
@@ -156,8 +185,8 @@ impl ScrOp<Java> for ObjectOriented {
     }
 }
 #[derive(Clone, Copy, Debug)]
-pub struct WasmBindgem<X>(pub X);
-impl<X: ScrOp<ECMAScript>> RustOp for WasmBindgem<X> {
+pub struct WasmBindgen<X>(pub X);
+impl<X: ScrOp<ECMAScript>> RustOp for WasmBindgen<X> {
     fn rust(
         &self,
         args: impl Iterator<Item = proc_macro2::TokenStream>,
@@ -191,9 +220,9 @@ impl<X: ScrOp<ECMAScript>> RustOp for WasmBindgem<X> {
         }
     }
 }
-impl<C, X: Push<C>> Push<C> for WasmBindgem<X> {
+impl<C, X: Push<C>> Push<C> for WasmBindgen<X> {
     fn push(b: C) -> either::Either<Self, C> {
-        X::push(b).map_left(WasmBindgem)
+        X::push(b).map_left(WasmBindgen)
     }
 }
 
@@ -221,7 +250,7 @@ impl<O: ScrOp<Java>, T, Y, S, W: ExportTerm<ScrCLikeAst<Java>, O, T, Y, S>>
         body: ScrCLikeAst<Java>,
     ) -> anyhow::Result<ScrCLikeAst<Java>> {
         use rat_ast::export::EmitTarget;
-        let Some(k) = self.catch.as_ref() else{
+        let Some(k) = self.catch.as_ref() else {
             return self.wrapped.go(s, f, body);
         };
         Ok(ScrCLikeAst(
@@ -248,7 +277,7 @@ impl<O: ScrOp<ECMAScript>, T, Y, S, W: ExportTerm<ScrCLikeAst<ECMAScript>, O, T,
         body: ScrCLikeAst<ECMAScript>,
     ) -> anyhow::Result<ScrCLikeAst<ECMAScript>> {
         use rat_ast::export::EmitTarget;
-        let Some(k) = self.catch.as_ref() else{
+        let Some(k) = self.catch.as_ref() else {
             return self.wrapped.go(s, f, body);
         };
         Ok(ScrCLikeAst(
@@ -259,7 +288,7 @@ impl<O: ScrOp<ECMAScript>, T, Y, S, W: ExportTerm<ScrCLikeAst<ECMAScript>, O, T,
                     {}
                 }}",
                 self.wrapped.go(&mut s, f, body)?.0,
-                s.target(f,k, vec![ScrCLikeAst(format!("_catch").into())])
+                s.target(f, k, vec![ScrCLikeAst(format!("_catch").into())])
             )
             .into(),
         ))
@@ -275,7 +304,7 @@ impl<O: ScrOp<C>, T, Y, S, W: ExportTerm<ScrCLikeAst<C>, O, T, Y, S>>
         body: ScrCLikeAst<C>,
     ) -> anyhow::Result<ScrCLikeAst<C>> {
         use rat_ast::export::EmitTarget;
-        let Some(k) = self.catch.as_ref() else{
+        let Some(k) = self.catch.as_ref() else {
             return self.wrapped.go(s, f, body);
         };
         Ok(ScrCLikeAst(
@@ -286,7 +315,11 @@ impl<O: ScrOp<C>, T, Y, S, W: ExportTerm<ScrCLikeAst<C>, O, T, Y, S>>
                     {}
                 }}",
                 self.wrapped.go(&mut s, f, body)?.0,
-                s.target(f, k, vec![ScrCLikeAst(format!("std::current_exception()").into())])
+                s.target(
+                    f,
+                    k,
+                    vec![ScrCLikeAst(format!("std::current_exception()").into())]
+                )
             )
             .into(),
         ))

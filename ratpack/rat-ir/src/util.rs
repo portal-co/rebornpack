@@ -229,6 +229,10 @@ no_push!(
 no_push!(
     type Option<T>;
 );
+pub struct DropGuest {}
+no_push!(
+    type DropGuest;
+);
 
 pub struct Catch<O, T, Y, S, W> {
     pub wrapped: W,

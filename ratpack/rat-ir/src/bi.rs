@@ -4,6 +4,7 @@ use anyhow::Context;
 use either::Either;
 use id_arena::Id;
 use once_map::OnceMap;
+use rat_debug::Span;
 
 use crate::{Block, BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Func, Value};
 pub mod ai;
@@ -118,6 +119,7 @@ pub trait Tracer<O, T, Y, S, O2, T2, Y2, S2>: Sized {
         y: &Y,
         new: &mut Func<O2, T2, Y2, S2>,
         k: Id<Block<O2, T2, Y2, S2>>,
+        span: Option<Span>,
     ) -> anyhow::Result<(Self::Meta, Id<Block<O2, T2, Y2, S2>>)>;
     fn op(
         &mut self,
@@ -127,6 +129,7 @@ pub trait Tracer<O, T, Y, S, O2, T2, Y2, S2>: Sized {
         args: &[Self::Meta],
         new: &mut Func<O2, T2, Y2, S2>,
         k: Id<Block<O2, T2, Y2, S2>>,
+        span: Option<Span>,
     ) -> anyhow::Result<(Self::Meta, Id<Block<O2, T2, Y2, S2>>)>;
     fn term(
         state: &mut State<O, T, Y, S, O2, T2, Y2, S2, Self>,
@@ -142,6 +145,7 @@ pub trait Tracer<O, T, Y, S, O2, T2, Y2, S2>: Sized {
         new: &mut Func<O2, T2, Y2, S2>,
         k: Id<Block<O2, T2, Y2, S2>>,
         old: &Func<O,T,Y,S>,
+        span: Option<Span>,
     ) -> anyhow::Result<()>;
 }
 pub struct State<O, T, Y, S, O2, T2, Y2, S2, C: Tracer<O, T, Y, S, O2, T2, Y2, S2>> {
@@ -185,19 +189,19 @@ pub fn trace_block<O, T, Y, S, O2, T2: Default, Y2, S2, C: Tracer<O, T, Y, S, O2
                         .iter()
                         .map(|u| {
                             let a = &**values.get(&u.value).context("in getting the value")?;
-                            let (s, b) = state.tracer.select(&i, a, &u.select,y, new, w)?;
+                            let (s, b) = state.tracer.select(&i, a, &u.select,y, new, w,old.spans[u.value].clone())?;
                             w = b;
                             Ok(s)
                         })
                         .collect::<anyhow::Result<Vec<_>>>()?;
-                    let (s, b) = state.tracer.op(&i, o,y, &ms, new, w)?;
+                    let (s, b) = state.tracer.op(&i, o,y, &ms, new, w,old.spans[*inst].clone())?;
                     w = b;
                     Arc::new(s)
                 }
                 crate::Value::BlockParam(i, _, _) => params[*i].clone(),
                 crate::Value::Alias(u, y) => {
                     let a = &**values.get(&u.value).context("in getting the value")?;
-                    let (s, b) = state.tracer.select(&i, a, &u.select,y, new, w)?;
+                    let (s, b) = state.tracer.select(&i, a, &u.select,y, new, w,old.spans[u.value].clone())?;
                     w = b;
                     Arc::new(s)
                 }
@@ -213,6 +217,7 @@ pub fn trace_block<O, T, Y, S, O2, T2: Default, Y2, S2, C: Tracer<O, T, Y, S, O2
         new,
         w,
         old,
+        old.blocks[k].term_span.clone(),
     )?;
 
     Ok(v)

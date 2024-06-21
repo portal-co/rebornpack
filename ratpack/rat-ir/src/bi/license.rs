@@ -3,6 +3,7 @@ use std::{collections::BTreeMap, marker::PhantomData, sync::Arc};
 use anyhow::Context;
 use either::Either;
 use id_arena::Id;
+use rat_debug::Span;
 
 use crate::{
     no_push,
@@ -66,8 +67,9 @@ impl<
         y: &Y,
         new: &mut crate::Func<O2, T2, Y2, S2>,
         k: Id<crate::Block<O2, T2, Y2, S2>>,
+        sp: Option<Span>
     ) -> anyhow::Result<(Self::Meta, Id<crate::Block<O2, T2, Y2, S2>>)> {
-        self.ctx.select(i.0.as_ref(), m, s, y, new, k)
+        self.ctx.select(i.0.as_ref(), m, s, y, new, k,sp)
     }
 
     fn op(
@@ -78,12 +80,13 @@ impl<
         args: &[Self::Meta],
         new: &mut crate::Func<O2, T2, Y2, S2>,
         k: Id<crate::Block<O2, T2, Y2, S2>>,
+        sp: Option<Span>,
     ) -> anyhow::Result<(Self::Meta, Id<crate::Block<O2, T2, Y2, S2>>)> {
         let mut o = o.clone();
         if !i.1 {
             o.no_license();
         }
-        self.ctx.op(i.0.as_ref(), &o, y, args, new, k)
+        self.ctx.op(i.0.as_ref(), &o, y, args, new, k,sp)
     }
 
     fn term(
@@ -103,6 +106,7 @@ impl<
         new: &mut crate::Func<O2, T2, Y2, S2>,
         k: Id<crate::Block<O2, T2, Y2, S2>>,
         old: &Func<O, T, Y, S>,
+        span: Option<Span>
     ) -> anyhow::Result<()> {
         let st2 = unsafe {
             std::mem::transmute::<_, &mut super::State<O, T, Y, S, O2, T2, Y2, S2, C>>(state)
@@ -132,6 +136,7 @@ impl<
                     PhantomData,
                 ));
                 let k = new.blocks.alloc(Block {
+                    term_span: span.clone(),
                     insts: vec![v],
                     term: T2::push(If {
                         val: Use {
@@ -159,6 +164,7 @@ impl<
             new,
             k,
             old,
+            span.clone(),
         );
         // let b: Vec<_> = [true, false]
         //     .into_iter()

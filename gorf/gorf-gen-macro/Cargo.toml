@@ -1,0 +1,17 @@
+[package]
+name = "gorf-gen-macro"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+chumsky = "0.9.3"
+gorf-core = {path="../gorf-core"}
+gorf-gen-core = {path="../gorf-gen-core"}
+proc-macro2 = "1.0.70"
+quote = "1.0.33"
+syn = "2.0.41"
+
+[lib]
+proc-macro = true

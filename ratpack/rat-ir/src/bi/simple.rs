@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use either::Either;
 use id_arena::Id;
+use rat_debug::Span;
 
 use crate::{
     build_fn,
@@ -16,6 +17,7 @@ pub trait SimpleOp<O, Y, O2, T2, Y2, S2> {
         o: &O,
         y: &Y,
         args: &[Id<Value<O2, T2, Y2, S2>>],
+        span: Option<Span>,
     ) -> impl Builder<O2, T2, Y2, S2, Result = Id<Value<O2, T2, Y2, S2>>>;
 }
 impl<
@@ -41,15 +43,20 @@ impl<
         o: &BoundOp<B>,
         y: &BoundType<B>,
         args: &[Id<Value<O2, T2, Y2, S2>>],
+        span: Option<Span>,
     ) -> impl Builder<O2, T2, Y2, S2, Result = Id<Value<O2, T2, Y2, S2>>> {
-        self.first().build(&o.0, &y.0, args)
+        self.first().build(&o.0, &y.0, args, span)
     }
 }
 pub trait Gm {
     type First;
     type Second;
-    fn first<'a>(&'a mut self) -> &'a mut Self::First where Self::First: 'a;
-    fn second<'a>(&'a mut self) -> &'a mut Self::Second where Self::Second: 'a;
+    fn first<'a>(&'a mut self) -> &'a mut Self::First
+    where
+        Self::First: 'a;
+    fn second<'a>(&'a mut self) -> &'a mut Self::Second
+    where
+        Self::Second: 'a;
 }
 macro_rules! gm_impl {
     (type $ty:ident <$($param:tt),*>;) => {
@@ -125,10 +132,11 @@ impl<
         o: &Either<O, Ox>,
         y: &Y,
         args: &[Id<Value<O2, T2, Y2, S2>>],
+        span: Option<Span>,
     ) -> impl Builder<O2, T2, Y2, S2, Result = Id<Value<O2, T2, Y2, S2>>> {
         match o {
-            Either::Left(a) => Either::Left(self.first().build(a, y, args)),
-            Either::Right(a) => Either::Right(self.second().build(a, y, args)),
+            Either::Left(a) => Either::Left(self.first().build(a, y, args, span)),
+            Either::Right(a) => Either::Right(self.second().build(a, y, args, span)),
         }
     }
 }
@@ -193,6 +201,7 @@ macro_rules! safe {
                 o: &$b,
                 y: &Y,
                 args: &[Id<Value<O2, T2, Y2, S2>>],
+                span: Option<Span>,
             ) -> impl Builder<O2, T2, Y2, S2, Result = Id<Value<O2, T2, Y2, S2>>> {
                 $crate::build_fn(move|new,k|{
                     let v = new.opts.alloc(Value::Operator(
@@ -207,6 +216,7 @@ macro_rules! safe {
                         ::std::marker::PhantomData,
                     ));
                     new.blocks[k].insts.push(v);
+                    new.spans[v] = span;
                     Ok((v,k))
                 })
             }
@@ -219,6 +229,7 @@ macro_rules! safe {
                 o: &$b,
                 y: &Y,
                 args: &[Id<Value<O2, T2, Y2, S2>>],
+                span: Option<Span>,
             ) -> impl Builder<O2, T2, Y2, S2, Result = Id<Value<O2, T2, Y2, S2>>> {
                 $crate::build_fn(move|new,k|{
                     let v = new.opts.alloc(Value::Operator(
@@ -233,6 +244,7 @@ macro_rules! safe {
                         ::std::marker::PhantomData,
                     ));
                     new.blocks[k].insts.push(v);
+                    new.spans[v] = span;
                     Ok((v,k))
                 })
             }
@@ -245,6 +257,7 @@ pub trait SimpleSelect<Y, S, O2, T2, Y2, S2> {
         s: &'a S,
         y: &'a Y,
         arg: &'a Id<Value<O2, T2, Y2, S2>>,
+        span: Option<Span>,
     ) -> impl Builder<O2, T2, Y2, S2, Result = Id<Value<O2, T2, Y2, S2>>> + 'a;
 }
 impl<
@@ -270,9 +283,11 @@ impl<
         s: &'a BoundSelect<B>,
         y: &'a BoundType<B>,
         arg: &'a Id<Value<O2, T2, Y2, S2>>,
+        span: Option<Span>,
     ) -> impl Builder<O2, T2, Y2, S2, Result = Id<Value<O2, T2, Y2, S2>>> + 'a {
-        let b = self.first().build_select(s, y, arg);
-        let b: Box<dyn Builder<O2, T2, Y2, S2, Result = Id<Value<O2, T2, Y2, S2>>> + '_> = Box::new(b);
+        let b = self.first().build_select(s, y, arg, span);
+        let b: Box<dyn Builder<O2, T2, Y2, S2, Result = Id<Value<O2, T2, Y2, S2>>> + '_> =
+            Box::new(b);
         return b;
     }
 }
@@ -371,8 +386,9 @@ impl<
         y: &Y,
         new: &mut crate::Func<O2, T2, Y2, S2>,
         k: id_arena::Id<crate::Block<O2, T2, Y2, S2>>,
+        span: Option<Span>,
     ) -> anyhow::Result<(Self::Meta, id_arena::Id<crate::Block<O2, T2, Y2, S2>>)> {
-        Box::new(self.wrapped.build_select(s, y, m)).build(new, k)
+        Box::new(self.wrapped.build_select(s, y, m, span)).build(new, k)
     }
 
     fn op(
@@ -383,8 +399,9 @@ impl<
         args: &[Self::Meta],
         new: &mut crate::Func<O2, T2, Y2, S2>,
         k: id_arena::Id<crate::Block<O2, T2, Y2, S2>>,
+        span: Option<Span>,
     ) -> anyhow::Result<(Self::Meta, id_arena::Id<crate::Block<O2, T2, Y2, S2>>)> {
-        Box::new(self.wrapped.build(o, y, args)).build(new, k)
+        Box::new(self.wrapped.build(o, y, args, span)).build(new, k)
     }
 
     fn term(
@@ -404,6 +421,7 @@ impl<
         new: &mut crate::Func<O2, T2, Y2, S2>,
         k: id_arena::Id<crate::Block<O2, T2, Y2, S2>>,
         old: &crate::Func<O, T, Y, S>,
+        span: Option<Span>,
     ) -> anyhow::Result<()> {
         let m = t
             .t2s()
@@ -416,6 +434,7 @@ impl<
         );
         let (n, k) = Box::new(state.tracer.wrapped.warp(n)).build(new, k)?;
         new.blocks[k].term = n;
+        new.blocks[k].term_span = span;
         Ok(())
     }
 }

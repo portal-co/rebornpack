@@ -8,9 +8,12 @@ use std::{
 
 use either::Either;
 use id_arena::{Arena, Id};
+use rat_debug::Span;
+use util::PerID;
 pub mod bi;
 pub mod cfg;
 pub mod dom;
+pub mod droppify;
 pub mod maxssa;
 pub mod module;
 pub mod transform;
@@ -140,6 +143,21 @@ pub struct Func<O, T, Y, S> {
     pub blocks: Arena<Block<O, T, Y, S>>,
     pub entry: Id<Block<O, T, Y, S>>,
     pub pred_cache: BTreeMap<Id<Block<O, T, Y, S>>, BTreeSet<Id<Block<O, T, Y, S>>>>,
+    pub spans: PerID<Value<O, T, Y, S>, Option<Span>>,
+}
+impl<O, T, Y, S> Func<O, T, Y, S> {
+    pub fn def_blocks(&self) -> PerID<Value<O, T, Y, S>, Option<Id<Block<O, T, Y, S>>>> {
+        let mut r: PerID<Value<O, T, Y, S>, Option<Id<Block<O, T, Y, S>>>> = Default::default();
+        for w in self.opts.iter().map(|a| a.0).collect::<Vec<_>>() {
+            let k = self
+                .blocks
+                .iter()
+                .find(|b| b.1.insts.contains(&w))
+                .map(|a| a.0);
+            r[w] = k;
+        }
+        return r;
+    }
 }
 impl<O, T: Default, Y, S> Default for Func<O, T, Y, S> {
     fn default() -> Self {
@@ -150,12 +168,19 @@ impl<O, T: Default, Y, S> Default for Func<O, T, Y, S> {
             blocks: ks,
             entry,
             pred_cache: Default::default(),
+            spans: Default::default(),
         };
     }
 }
-impl<O: Clone,T: Clone,Y: Clone,S: Clone> Clone for Func<O,T,Y,S>{
+impl<O: Clone, T: Clone, Y: Clone, S: Clone> Clone for Func<O, T, Y, S> {
     fn clone(&self) -> Self {
-        Self { opts: self.opts.clone(), blocks: self.blocks.clone(), entry: self.entry.clone(), pred_cache: self.pred_cache.clone() }
+        Self {
+            opts: self.opts.clone(),
+            blocks: self.blocks.clone(),
+            entry: self.entry.clone(),
+            pred_cache: self.pred_cache.clone(),
+            spans: self.spans.clone(),
+        }
     }
 }
 pub struct Use<O, T, Y, S> {
@@ -230,10 +255,16 @@ pub struct Block<O, T, Y, S> {
     pub insts: Vec<Id<Value<O, T, Y, S>>>,
     pub term: T,
     pub params: Vec<Y>,
+    pub term_span: Option<Span>,
 }
-impl<O,T: Clone,Y: Clone,S> Clone for Block<O,T,Y,S>{
+impl<O, T: Clone, Y: Clone, S> Clone for Block<O, T, Y, S> {
     fn clone(&self) -> Self {
-        Self { insts: self.insts.clone(), term: self.term.clone(), params: self.params.clone() }
+        Self {
+            insts: self.insts.clone(),
+            term: self.term.clone(),
+            params: self.params.clone(),
+            term_span: self.term_span.clone(),
+        }
     }
 }
 impl<O, T: Default, Y, S> Default for Block<O, T, Y, S> {
@@ -242,6 +273,7 @@ impl<O, T: Default, Y, S> Default for Block<O, T, Y, S> {
             insts: Default::default(),
             term: Default::default(),
             params: Default::default(),
+            term_span: None,
         }
     }
 }
@@ -455,6 +487,34 @@ macro_rules! bound_impls {
         {
             fn default() -> Self {
                 return Self(Default::default());
+            }
+        }
+        impl<B: Bound> PartialEq for $ty<B>
+        where
+            B::$x<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: PartialEq,
+        {
+            fn eq(&self, other: &Self) -> bool {
+                return self.0 == other.0;
+            }
+        }
+        impl<B: Bound> Eq for $ty<B> where
+            B::$x<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: Eq
+        {
+        }
+        impl<B: Bound> PartialOrd for $ty<B>
+        where
+            B::$x<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: PartialOrd,
+        {
+            fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+                return self.0.partial_cmp(&other.0);
+            }
+        }
+        impl<B: Bound> Ord for $ty<B>
+        where
+            B::$x<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: Ord,
+        {
+            fn cmp(&self, other: &Self) -> Ordering {
+                return self.0.cmp(&other.0);
             }
         }
         // impl<B: Bound,A> $crate::util::Extract<A> for $ty<B>

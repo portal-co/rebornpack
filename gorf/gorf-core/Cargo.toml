@@ -1,0 +1,18 @@
+[package]
+name = "gorf-core"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow.workspace = true
+castaway = "0.2.2"
+chumsky.workspace = true
+either.workspace = true
+id-arena.workspace = true
+lambda_calculus.workspace = true
+num-bigint.workspace = true
+num-traits.workspace = true
+rat-ir = { version = "0.1.0", path = "../../ratpack/rat-ir" }
+serde.workspace = true

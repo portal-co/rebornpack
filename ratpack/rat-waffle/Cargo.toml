@@ -18,3 +18,11 @@ rat-ast = { version = "0.1.0", path = "../rat-ast" }
 rat-ir = { version = "0.1.0", path = "../rat-ir" }
 syn.workspace = true
 portal-pc-waffle.workspace = true
+quasiquote = "0.1.1"
+rat-script = { version = "0.1.0", path = "../rat-script" }
+prost = "0.12.6"
+prost-types = "0.12.6"
+once_cell = "1.19.0"
+
+[build-dependencies]
+prost-build = "0.12.6"

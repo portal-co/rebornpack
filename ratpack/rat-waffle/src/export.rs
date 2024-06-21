@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicBool;
+
 use either::Either;
 use id_arena::Id;
 // use more_waffle::{
@@ -8,11 +10,14 @@ use id_arena::Id;
 use rat_ir::{
     bi::ai::InferOp,
     util::{BinOp, PerID},
-    Block, BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Func,
+    Block, BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Call, Func,
 };
-use waffle::{FunctionBody, Module, Operator, Value, ValueDef};
+use waffle::{
+    util::new_sig, FunctionBody, Import, ImportKind, Module, Operator, SignatureData, Value,
+    ValueDef,
+};
 
-use crate::{import::WaffleTerm,  OpWrapper};
+use crate::{import::WaffleTerm, OpWrapper};
 pub trait WaffleExtra<T>: Clone {
     fn waffle(&self) -> T;
 }
@@ -42,6 +47,9 @@ impl WaffleExtra<Option<usize>> for Option<usize> {
         self.clone()
     }
 }
+pub trait ExportMod<O, T, Y, S> {
+    fn funcs(&self) -> &PerID<Func<O, T, Y, S>, waffle::Func>;
+}
 pub trait ExportOp<O, T, Y, S, C> {
     fn export(
         &self,
@@ -65,6 +73,78 @@ impl<O, T, Y, S, C> ExportOp<O, T, Y, S, C> for OpWrapper {
     ) -> anyhow::Result<(Vec<waffle::Value>, waffle::Block)> {
         return <waffle::Operator as ExportOp<O, T, Y, S, C>>::export(
             &self.0, ctx, m, target, wb, args, types,
+        );
+    }
+}
+impl<O, T, Y, S, C: ExportMod<O, T, Y, S>> ExportOp<O, T, S, Y, C> for Call<O, T, Y, S> {
+    fn export(
+        &self,
+        ctx: &mut C,
+        m: &mut Module,
+        target: &mut FunctionBody,
+        wb: waffle::Block,
+        args: Vec<waffle::Value>,
+        types: &[waffle::Type],
+    ) -> anyhow::Result<(Vec<waffle::Value>, waffle::Block)> {
+        let f = ctx.funcs()[self.func];
+        return <waffle::Operator as ExportOp<O, T, Y, S, C>>::export(
+            &waffle::Operator::Call { function_index: f },
+            ctx,
+            m,
+            target,
+            wb,
+            args,
+            types,
+        );
+    }
+}
+impl<O, T, Y: WaffleExtra<Vec<waffle::Type>>, S, C> ExportOp<O, T, Y, S, C> for crate::Import<Y> {
+    fn export(
+        &self,
+        ctx: &mut C,
+        m: &mut Module,
+        target: &mut FunctionBody,
+        wb: waffle::Block,
+        args: Vec<waffle::Value>,
+        types: &[waffle::Type],
+    ) -> anyhow::Result<(Vec<waffle::Value>, waffle::Block)> {
+        let mut i = m.imports.iter();
+        let i = loop {
+            let Some(x) = i.next() else {
+                let s = new_sig(
+                    m,
+                    SignatureData {
+                        params: self.types.iter().flat_map(|a| a.waffle()).collect(),
+                        returns: self.rets.iter().flat_map(|a| a.waffle()).collect(),
+                    },
+                );
+                let f = m.funcs.push(waffle::FuncDecl::Import(
+                    s,
+                    format!("{}.{}", self.module, self.name),
+                ));
+                m.imports.push(Import {
+                    module: self.module.clone(),
+                    name: self.name.clone(),
+                    kind: ImportKind::Func(f),
+                });
+                break f;
+            };
+            if x.module != self.module || x.name != self.name {
+                continue;
+            }
+            let ImportKind::Func(a) = &x.kind else {
+                continue;
+            };
+            break *a;
+        };
+        return <waffle::Operator as ExportOp<O, T, Y, S, C>>::export(
+            &waffle::Operator::Call { function_index: i },
+            ctx,
+            m,
+            target,
+            wb,
+            args,
+            types,
         );
     }
 }
@@ -97,9 +177,22 @@ impl<O, T, Y, S, C> ExportOp<O, T, Y, S, C> for waffle::Operator {
         args: Vec<waffle::Value>,
         types: &[waffle::Type],
     ) -> anyhow::Result<(Vec<waffle::Value>, waffle::Block)> {
+
+            let s = self.to_string();
+            let s = s.split_once('<').map(|a| a.0).unwrap_or(s.as_str());
+            if let Some(a) = crate::RT
+                .as_ref()
+                .and_then(|a| a.decls.get(&format!("{}", s)))
+            {
+                // LOCK.fetch_xor(true, std::sync::atomic::Ordering::SeqCst);
+                
+            }
+            // LOCK.fetch_xor(true, std::sync::atomic::Ordering::SeqCst);
         let args = target.arg_pool.from_iter(args.iter().cloned());
         let tys = target.type_pool.from_iter(types.iter().cloned());
-        let v = target.values.push(ValueDef::Operator(self.clone(), args, tys));
+        let v = target
+            .values
+            .push(ValueDef::Operator(self.clone(), args, tys));
         target.append_to_block(wb, v);
         let r = results_ref_2(target, v);
         return Ok((r, wb));
@@ -121,7 +214,7 @@ impl<O, T, Y, S, C> ExportOp<O, T, S, Y, C> for BinOp {
             (_, waffle::Type::ExternRef) => {
                 anyhow::bail!("{self:?} does not work for {}s", types[0])
             }
-            (_, waffle::Type::TypedFuncRef{..}) => {
+            (_, waffle::Type::TypedFuncRef { .. }) => {
                 anyhow::bail!("{self:?} does not work for {}s", types[0])
             }
             (BinOp::Add, waffle::Type::I32) => Operator::I32Add,

@@ -1,5 +1,5 @@
 [workspace]
-members=["ratpack/rat-waffle", "ratpack/rat-ir", "ratpack/rat-ast", "ratpack/rat-script", "ratpack/skulk", "ratpack/rat-tiny-js", "ratpack/rat-rust", "ratpack/rat-sleigh"] # , "trigon/trg-core", "private/cluejme","private/trg-x"
+members=["ratpack/rat-waffle", "ratpack/rat-ir", "ratpack/rat-ast", "ratpack/rat-script", "ratpack/skulk", "ratpack/rat-tiny-js", "ratpack/rat-rust", "ratpack/rat-sleigh", "ratpack/rat-debug","gorf/gorf-core","gorf/gorf-kiselyov","gorf/gorf-gen-core","gorf/gorf-gen-macro","gorf/lambda-rt","gorf/lambda-rt-test","jetski", "isovariant"] # , "trigon/trg-core", "private/cluejme","private/trg-x"
 # "axle/axle"
 # "axle/axle-waffle"
 # "axle/axle-ast", 

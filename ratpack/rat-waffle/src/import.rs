@@ -36,8 +36,8 @@ pub trait ImportTerm<O, T, Y, S> {
 pub trait WaffleCall<O, T, Y, S> {
     fn call(&mut self, a: waffle::Func) -> anyhow::Result<O>;
 }
-pub struct Normal<O, T, Y, S> {
-    pub fn_map: PerEntity<waffle::Func, Option<Id<Func<O, T, Y, S>>>>,
+pub struct Normal<W> {
+    pub fn_map: W,
 }
 pub trait WaffleOp {
     fn from_waffle(x: &waffle::Operator) -> Self;
@@ -48,7 +48,7 @@ impl WaffleOp for OpWrapper {
     }
 }
 impl<O: Push<OpWrapper> + Push<Call<O, T, Y, S>>, T, Y, S> ImportOp<O, T, Y, S>
-    for Normal<O, T, Y, S>
+    for Normal<PerEntity<waffle::Func, Option<Id<Func<O, T, Y, S>>>>>
 {
     fn op(
         &mut self,
@@ -80,9 +80,39 @@ impl<O: Push<OpWrapper> + Push<Call<O, T, Y, S>>, T, Y, S> ImportOp<O, T, Y, S>
         return Ok((v, k));
     }
 }
-
-impl<O, T: Push<WaffleTerm<O, T, Y, S>>, Y, S: Push<Option<usize>>> ImportTerm<O, T, Y, S>
-    for Normal<O, T, Y, S>
+impl<O: Push<OpWrapper>, T, Y, S> ImportOp<O, T, Y, S> for Normal<()> {
+    fn op(
+        &mut self,
+        op: &Operator,
+        func: &mut Func<O, T, Y, S>,
+        args: Vec<Use<O, T, Y, S>>,
+        ty: Y,
+        k: Id<rat_ir::Block<O, T, Y, S>>,
+    ) -> anyhow::Result<(Id<Value<O, T, Y, S>>, Id<rat_ir::Block<O, T, Y, S>>)> {
+        let v = func.opts.alloc(Value::Operator(
+            (|| {
+                // let Operator::Call { function_index } = op else {
+                return O::push(OpWrapper(op.clone()))
+                    .map_right(|_| ())
+                    .unwrap_left();
+                // };
+                // let Some(x) = self.fn_map[*function_index].as_ref() else {
+                //     return O::push(OpWrapper(op.clone()))
+                //         .map_right(|_| ())
+                //         .unwrap_left();
+                // };
+                // return O::push(Call { func: *x }).map_right(|_| ()).unwrap_left();
+            })(),
+            args,
+            ty,
+            PhantomData,
+        ));
+        func.blocks[k].insts.push(v);
+        return Ok((v, k));
+    }
+}
+impl<W, O, T: Push<WaffleTerm<O, T, Y, S>>, Y, S: Push<Option<usize>>> ImportTerm<O, T, Y, S>
+    for Normal<W>
 {
     fn term(
         &mut self,
@@ -217,6 +247,33 @@ no_push!(
 impl<O, T, Y, S> Default for WaffleTerm<O, T, Y, S> {
     fn default() -> Self {
         Self::Unreachable
+    }
+}
+impl<O, T, Y: Clone, S: Clone> Clone for WaffleTerm<O, T, Y, S> {
+    fn clone(&self) -> Self {
+        match self {
+            Self::Br(arg0) => Self::Br(arg0.clone()),
+            Self::CondBr {
+                cond,
+                if_true,
+                if_false,
+            } => Self::CondBr {
+                cond: cond.clone(),
+                if_true: if_true.clone(),
+                if_false: if_false.clone(),
+            },
+            Self::Select {
+                value,
+                cases,
+                default,
+            } => Self::Select {
+                value: value.clone(),
+                cases: cases.clone(),
+                default: default.clone(),
+            },
+            Self::Ret(arg0) => Self::Ret(arg0.clone()),
+            Self::Unreachable => Self::Unreachable,
+        }
     }
 }
 impl<O, T, Y, S> SaneTerminator<O, T, Y, S> for WaffleTerm<O, T, Y, S> {
@@ -533,9 +590,19 @@ pub fn import_func<O, T: Default, Y: Push<Vec<waffle::Type>> + Clone, S: Push<Op
     }
     return Ok(mapper);
 }
+pub struct CanonCall {}
+impl Bound for CanonCall {
+    type O<O, T, Y, S> = Either<Call<O, T, Y, S>, OpWrapper>;
+
+    type T<O, T, Y, S> = WaffleTerm<O, T, Y, S>;
+
+    type Y<O, T, Y, S> = Vec<waffle::Type>;
+
+    type S<O, T, Y, S> = Option<usize>;
+}
 pub struct Canon {}
 impl Bound for Canon {
-    type O<O, T, Y, S> = Either<Call<O, T, Y, S>, OpWrapper>;
+    type O<O, T, Y, S> = OpWrapper;
 
     type T<O, T, Y, S> = WaffleTerm<O, T, Y, S>;
 

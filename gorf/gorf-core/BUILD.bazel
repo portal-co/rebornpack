@@ -1,0 +1,23 @@
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "gorf-core",
+    srcs = glob([
+        "src/*.rs",
+        "src/**/*.rs",
+    ]),
+    deps = [
+        "@crates//:chumsky",
+        "@crates//:either",
+        "@crates//:lambda_calculus",
+        "@crates//:num-bigint",
+        "@crates//:num-traits",
+        "@crates//:serde",
+        "//ratpack/rat-ir",
+        "@crates//:id-arena",
+        "@crates//:anyhow",
+        "@crates//:castaway",
+    ],
+)

@@ -3,6 +3,7 @@ use std::marker::PhantomData;
 use anyhow::Context;
 use either::Either;
 use id_arena::Id;
+use rat_debug::Span;
 
 use crate::{
     util::Extract, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Func, SaneTerminator, Use, Value
@@ -111,6 +112,7 @@ impl<
         y: &Y,
         new: &mut crate::Func<O2, T2, Y2, S2>,
         k: id_arena::Id<crate::Block<O2, T2, Y2, S2>>,
+        span: Option<Span>
     ) -> anyhow::Result<(Self::Meta, id_arena::Id<crate::Block<O2, T2, Y2, S2>>)> {
         let (i, e) = s.infer(&mut self.ctx, new.opts[*m].ty())?;
         // let e = s.extract();
@@ -122,6 +124,7 @@ impl<
             i,
         ));
         new.blocks[k].insts.push(v);
+        new.spans[v] = span;
         return Ok((v, k));
     }
 
@@ -133,6 +136,7 @@ impl<
         args: &[Self::Meta],
         new: &mut crate::Func<O2, T2, Y2, S2>,
         k: id_arena::Id<crate::Block<O2, T2, Y2, S2>>,
+        span: Option<Span>,
     ) -> anyhow::Result<(Self::Meta, id_arena::Id<crate::Block<O2, T2, Y2, S2>>)> {
         let (i, p) = o.infer(&mut self.ctx, args.iter().map(|x| new.opts[*x].ty()))?;
         // let p = o.extract();
@@ -148,6 +152,7 @@ impl<
             PhantomData,
         ));
         new.blocks[k].insts.push(v);
+        new.spans[v] = span;
         return Ok((v, k));
     }
 
@@ -168,6 +173,7 @@ impl<
         new: &mut crate::Func<O2, T2, Y2, S2>,
         mut k: id_arena::Id<crate::Block<O2, T2, Y2, S2>>,
         old: &Func<O,T,Y,S>,
+        span: Option<Span>,
     ) -> anyhow::Result<()> {
         let t2 = t.norm(
             |a| {
@@ -184,6 +190,7 @@ impl<
                             old.opts[u.value].ty(),
                             new,
                             k,
+                            old.spans[u.value].clone()
                         )?;
                         k = b;
                         Ok(s)
@@ -211,6 +218,7 @@ impl<
             |v| Ok(**valmap.get(&v).unwrap()),
         )?;
         new.blocks[k].term = t2;
+        new.blocks[k].term_span = span;
         Ok(())
     }
 }

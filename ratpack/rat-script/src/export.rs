@@ -41,7 +41,7 @@ macro_rules! script {
             Default,
         )]
         #[deref(forward)]
-        struct $a(pub String);
+        pub struct $a(pub String);
     };
 }
 #[derive(
@@ -182,4 +182,7 @@ pub trait CLike {
 
     fn r#continue(id: u16) -> Self;
     fn r#loop(&self, id: u16) -> Self;
+}
+pub trait CEmit<T: CLike>{
+    fn cemit(&self) -> T;
 }

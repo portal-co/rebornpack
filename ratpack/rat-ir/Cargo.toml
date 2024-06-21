@@ -12,4 +12,5 @@ derive_more = "0.99.17"
 either.workspace = true
 id-arena.workspace = true
 once_map.workspace = true
+rat-debug = { version = "0.1.0", path = "../rat-debug" }
 serde.workspace = true

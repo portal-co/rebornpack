@@ -1,0 +1,12 @@
+[package]
+name = "jetski"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+id-arena.workspace = true
+num-bigint = "0.4.4"
+rat-ir = { version = "0.1.0", path = "../ratpack/rat-ir" }
+relooper = "0.1.0"

@@ -8,7 +8,7 @@ use rat_ir::{
     bi::license::Taint, no_push, util::Push, BoundOp, BoundSelect, BoundTerm, BoundType, Func,
 };
 use syn::Ident;
-use waffle::{MemoryArg, Module, Operator, SignatureData};
+use waffle::{util::new_sig, FunctionBody, MemoryArg, Module, Operator, SignatureData};
 use prost::Message;
 pub mod rat{
     pub mod waffle{
@@ -68,8 +68,14 @@ pub fn do_test(m: &mut waffle::Module, f: &mut waffle::FunctionBody) -> anyhow::
         Default::default();
     f.convert_to_max_ssa(None);
     import::import_func(&mut g, &f, &mut import::Normal { fn_map: () })?;
+    let sig = new_sig(m,SignatureData{
+        params: f.blocks[f.entry].params.iter().map(|a|a.0).collect(),
+        returns: f.rets.clone(),
+    });
+    let mut new = FunctionBody::new(&m, sig);
     rat_ir::maxssa::maxssa(&mut g);
-    export::export_func_seal(&mut (), m, f, &g)?;
+    export::export_func_seal(&mut (), m, &mut new, &g)?;
+    *f = new;
     Ok(())
 }
 pub fn test_mod(m: &mut Module) -> anyhow::Result<()> {

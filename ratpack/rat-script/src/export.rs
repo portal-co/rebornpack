@@ -79,20 +79,21 @@ where
     }
 }
 
-impl<O: ScrOp<A>, T, Y, S, W: ExportTerm<ScrCLikeAst<A>, O, T, Y, S>, A: Script + CLike>
-    ExportTerm<ScrCLikeAst<A>, O, T, Y, S> for If<O, T, Y, S, W>
+impl<C,O: ScrOp<A>, T, Y, S, W: ExportTerm<ScrCLikeAst<A>,C, O, T, Y, S>, A: Script + CLike>
+    ExportTerm<ScrCLikeAst<A>,C, O, T, Y, S> for If<O, T, Y, S, W>
 {
     fn go(
         &self,
-        mut s: impl FnMut(Id<rat_ir::Block<O, T, Y, S>>) -> ScrCLikeAst<A>,
+        ctx: &mut C,
+        mut s: impl FnMut(&mut C,Id<rat_ir::Block<O, T, Y, S>>) -> ScrCLikeAst<A>,
         f: &rat_ir::Func<O, T, Y, S>,
         body: ScrCLikeAst<A>,
     ) -> anyhow::Result<ScrCLikeAst<A>> {
-        let ssa = self.val.value.ssa::<O, T, Y, S, ScrCLikeAst<A>>();
-        let t = self.then.go(&mut s, f, ScrCLikeAst(A::default()))?.0;
+        let ssa = self.val.value.ssa::<C,O, T, Y, S, ScrCLikeAst<A>>();
+        let t = self.then.go(ctx,&mut s, f, ScrCLikeAst(A::default()))?.0;
         let e = match self.r#else.as_ref() {
             None => None,
-            Some(x) => Some(x.go(s, f, ScrCLikeAst(A::default()))?.0),
+            Some(x) => Some(x.go(ctx,s, f, ScrCLikeAst(A::default()))?.0),
         };
         let e = match e {
             Some(a) => a.to_string(),
@@ -103,22 +104,22 @@ impl<O: ScrOp<A>, T, Y, S, W: ExportTerm<ScrCLikeAst<A>, O, T, Y, S>, A: Script 
         ))
     }
 }
-impl<O: ScrOp<A>, T, Y, S, A: Script + CLike> ExportAst<O, T, S, Y> for ScrCLikeAst<A> {
+impl<C,O: ScrOp<A>, T, Y, S, A: Script + CLike> ExportAst<C,O, T, S, Y> for ScrCLikeAst<A> {
     type Var = A;
 
-    fn get(var: Self::Var, y: &Y) -> Self {
+    fn get(ctx: &mut C,var: Self::Var, y: &Y) -> Self {
         Self(var)
     }
 
-    fn assign(&self, var: Self::Var, y: &Y) -> Self {
+    fn assign(&self,ctx: &mut C, var: Self::Var, y: &Y) -> Self {
         Self(format!("{var} = {}", self.0).into())
     }
 
-    fn select(&self, s: &S) -> Self {
+    fn select(&self,ctx: &mut C, s: &S) -> Self {
         self.clone()
     }
 
-    fn append(&mut self, i: impl Iterator<Item = Self>) {
+    fn append(&mut self,ctx: &mut C, i: impl Iterator<Item = Self>) {
         let s = once(std::mem::replace(self, Self("".to_owned().into())))
             .chain(i)
             .map(|a| a.0.to_string())
@@ -127,27 +128,29 @@ impl<O: ScrOp<A>, T, Y, S, A: Script + CLike> ExportAst<O, T, S, Y> for ScrCLike
         *self = Self(s.into())
     }
 
-    fn unit() -> Self {
+    fn unit(ctx: &mut C) -> Self {
         Self(format!("0").into())
     }
 
-    fn op(o: &O, args: &[Self]) -> Self {
+    fn op(ctx: &mut C,o: &O, args: &[Self]) -> Self {
         Self(o.op(args.iter().map(|x| x.0.clone())))
     }
 }
-impl<O: ScrOp<A>, T, Y, S, A: Script + CLike> CffAst<O, T, S, Y> for ScrCLikeAst<A> {
-    fn br_id(a: usize) -> Self {
-        let mut s: Self = <Self as CffAst<O, T, S, Y>>::set_id(a);
-        <Self as ExportAst<O, T, S, Y>>::append(
+impl<C,O: ScrOp<A>, T, Y, S, A: Script + CLike> CffAst<C,O, T, S, Y> for ScrCLikeAst<A> {
+    fn br_id(ctx: &mut C,a: usize) -> Self {
+        let mut s: Self = <Self as CffAst<C,O, T, S, Y>>::set_id(ctx,a);
+        let l = once(<Self as ReloopAst<C,O, T, S, Y>>::r#break(ctx,u16::MAX));
+        <Self as ExportAst<C,O, T, S, Y>>::append(
             &mut s,
-            once(<Self as ReloopAst<O, T, S, Y>>::r#break(u16::MAX)),
+            ctx,
+            l,
         );
         return s;
     }
-    fn set_id(a: usize) -> Self {
+    fn set_id(ctx: &mut C,a: usize) -> Self {
         Self(format!("$id = {a}").into())
     }
-    fn switch(m: &std::collections::BTreeMap<usize, Self>) -> Self {
+    fn switch(ctx: &mut C,m: &std::collections::BTreeMap<usize, Self>) -> Self {
         Self(
             format!(
                 "switch($id){{{}}}",
@@ -160,20 +163,20 @@ impl<O: ScrOp<A>, T, Y, S, A: Script + CLike> CffAst<O, T, S, Y> for ScrCLikeAst
         )
     }
 
-    fn forever(&self) -> Self {
+    fn forever(&self,ctx: &mut C) -> Self {
         Self(format!("while(1){{{}}}", self.0).into())
     }
 }
-impl<O: ScrOp<A>, T, Y, S, A: Script + CLike> ReloopAst<O, T, S, Y> for ScrCLikeAst<A> {
-    fn r#break(id: u16) -> Self {
+impl<C,O: ScrOp<A>, T, Y, S, A: Script + CLike> ReloopAst<C,O, T, S, Y> for ScrCLikeAst<A> {
+    fn r#break(ctx: &mut C,id: u16) -> Self {
         Self(A::r#break(id))
     }
 
-    fn r#continue(id: u16) -> Self {
+    fn r#continue(ctx: &mut C,id: u16) -> Self {
         Self(A::r#continue(id))
     }
 
-    fn r#loop(&self, id: u16) -> Self {
+    fn r#loop(&self,ctx: &mut C, id: u16) -> Self {
         Self(self.0.r#loop(id))
     }
 }

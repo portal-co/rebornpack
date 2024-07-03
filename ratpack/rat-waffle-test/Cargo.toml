@@ -1,0 +1,10 @@
+[package]
+name = "rat-waffle-test"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+portal-pc-waffle.workspace = true
+rat-ir = { version = "0.1.0", path = "../rat-ir" }
+rat-waffle = { version = "0.1.0", path = "../rat-waffle" }

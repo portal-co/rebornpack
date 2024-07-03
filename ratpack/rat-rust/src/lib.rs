@@ -50,15 +50,17 @@ impl<T: Bake> RustOp for Baked<T> {
 no_push!(
     type Baked<T>;
 );
-pub struct Bind<O, T, Y, S> {
+pub struct Bind<O, T, Y, S, C,R> {
     pub func: Id<Func<O, T, Y, S>>,
-    pub cache_num_args: usize,
+    pub cache_num_args: C,
+    pub root: R,
 }
 no_push!(
-    type Bind<O, T, Y, S>;
+    type Bind<O, T, Y, S,C,R>;
 );
-impl<O, T, Y, S> RustOp for Bind<O, T, Y, S> {
+impl<O, T, Y, S,R: ToTokens> RustOp for Bind<O, T, Y, S, usize,R> {
     fn rust(&self, args: impl Iterator<Item = TokenStream>) -> TokenStream {
+        let root = &self.root;
         let t = format_ident!("_{}", self.func.index());
         let mut x = quote! {};
         let args = args.enumerate().map(|(i, v)| {
@@ -78,7 +80,7 @@ impl<O, T, Y, S> RustOp for Bind<O, T, Y, S> {
             .chain(repeat(quote! {_}).take(self.cache_num_args - args.len()))
             .collect::<Vec<_>>();
         (quote! {
-            partial!(move crate::palette::#t => #(#args),*)
+            #root::partial!(move crate::palette::#t => #(#args),*)
         })
         .to_tokens(&mut x);
         return quote! {

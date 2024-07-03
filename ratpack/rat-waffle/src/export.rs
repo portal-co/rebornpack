@@ -13,8 +13,7 @@ use rat_ir::{
     Block, BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Call, Func,
 };
 use waffle::{
-    util::new_sig, FunctionBody, Import, ImportKind, Module, Operator, SignatureData, Value,
-    ValueDef,
+    entity::EntityRef, util::new_sig, FunctionBody, Import, ImportKind, Module, Operator, SignatureData, Value, ValueDef
 };
 
 use crate::{import::WaffleTerm, OpWrapper};
@@ -526,7 +525,8 @@ pub fn export_func_seal<
     src: &Func<O, T, Y, S>,
 ) -> anyhow::Result<()> {
     let x = export_func(ctx, m, target, src)?;
-    target.entry = x[src.entry];
+    let p = target.blocks[target.entry].params.iter().map(|a|a.1).collect();
+    target.set_terminator(target.entry,waffle::Terminator::Br { target: waffle::BlockTarget{block: x[src.entry], args: p} });
     return Ok(());
 }
 pub fn export_block<
@@ -547,8 +547,10 @@ pub fn export_block<
     let mut params = src.blocks[k]
         .params
         .iter()
-        .map(|t| {
+        .enumerate()
+        .map(|(i,t)| {
             let t: Vec<waffle::Type> = t.waffle();
+            // eprintln!("{i}@{} {t:?}",wb.index());
             let v = t
                 .iter()
                 .map(|a| target.add_blockparam(wb, *a))

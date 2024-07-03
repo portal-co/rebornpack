@@ -82,17 +82,17 @@ impl<A: RustOp, B: RustOp> RustOp for Either<A, B> {
         }
     }
 }
-impl<O: RustOp, T, Y: Rust, S: RustSel> ExportAst<O, T, S, Y> for TokenStream {
+impl<C,O: RustOp, T, Y: Rust, S: RustSel> ExportAst<C,O, T, S, Y> for TokenStream {
     type Var = String;
 
-    fn get(var: Self::Var, y: &Y) -> Self {
+    fn get(ctx: &mut C,var: Self::Var, y: &Y) -> Self {
         let var = Ident::new(&var, Span::call_site());
         quote! {
             #var.clone()
         }
     }
 
-    fn assign(&self, var: Self::Var, y: &Y) -> Self {
+    fn assign(&self,ctx: &mut C, var: Self::Var, y: &Y) -> Self {
         let var = Ident::new(&var, Span::call_site());
         quote! {
             {
@@ -102,31 +102,31 @@ impl<O: RustOp, T, Y: Rust, S: RustSel> ExportAst<O, T, S, Y> for TokenStream {
         }
     }
 
-    fn select(&self, s: &S) -> Self {
+    fn select(&self,ctx: &mut C, s: &S) -> Self {
         s.rust(self)
     }
 
-    fn append(&mut self, i: impl Iterator<Item = Self>) {
+    fn append(&mut self,ctx: &mut C, i: impl Iterator<Item = Self>) {
         for j in i {
             j.to_tokens(self)
         }
     }
 
-    fn unit() -> Self {
+    fn unit(ctx: &mut C) -> Self {
         quote!(())
     }
 
-    fn op(o: &O, args: &[Self]) -> Self {
+    fn op(ctx: &mut C,o: &O, args: &[Self]) -> Self {
         let o = o.rust(args.iter().cloned());
         return o;
     }
 }
-impl<O: RustOp, T, Y: Rust, S: RustSel> CffAst<O, T, S, Y> for TokenStream {
-    fn br_id(a: usize) -> Self {
+impl<C,O: RustOp, T, Y: Rust, S: RustSel> CffAst<C,O, T, S, Y> for TokenStream {
+    fn br_id(ctx: &mut C,a: usize) -> Self {
         quote! {__id = #a; break 'main;}
     }
 
-    fn switch(m: &std::collections::BTreeMap<usize, Self>) -> Self {
+    fn switch(ctx: &mut C,m: &std::collections::BTreeMap<usize, Self>) -> Self {
         let k = m.iter().map(|a| a.0);
         let v = m.iter().map(|a| a.1);
         quote! {
@@ -136,7 +136,7 @@ impl<O: RustOp, T, Y: Rust, S: RustSel> CffAst<O, T, S, Y> for TokenStream {
         }
     }
 
-    fn forever(&self) -> Self {
+    fn forever(&self,ctx: &mut C) -> Self {
         quote! {
             'main: loop{
                 #self
@@ -144,26 +144,26 @@ impl<O: RustOp, T, Y: Rust, S: RustSel> CffAst<O, T, S, Y> for TokenStream {
         }
     }
 
-    fn set_id(a: usize) -> Self {
+    fn set_id(ctx: &mut C,a: usize) -> Self {
         quote! {__id = #a}
     }
 }
-impl<O: RustOp, T, Y: Rust, S: RustSel> ReloopAst<O, T, S, Y> for TokenStream {
-    fn r#break(id: u16) -> Self {
+impl<C,O: RustOp, T, Y: Rust, S: RustSel> ReloopAst<C,O, T, S, Y> for TokenStream {
+    fn r#break(ctx: &mut C,id: u16) -> Self {
         let id = Lifetime::new(&format!("l{id}"), Span::call_site());
         quote! {
             break #id;
         }
     }
 
-    fn r#continue(id: u16) -> Self {
+    fn r#continue(ctx: &mut C,id: u16) -> Self {
         let id = Lifetime::new(&format!("l{id}"), Span::call_site());
         quote! {
             continue #id;
         }
     }
 
-    fn r#loop(&self, id: u16) -> Self {
+    fn r#loop(&self,ctx: &mut C, id: u16) -> Self {
         let id = Lifetime::new(&format!("l{id}"), Span::call_site());
         quote! {
             #id: loop{
@@ -172,12 +172,13 @@ impl<O: RustOp, T, Y: Rust, S: RustSel> ReloopAst<O, T, S, Y> for TokenStream {
         }
     }
 }
-impl<O: RustOp, T, Y: Rust, S: RustSel, W: ExportTerm<TokenStream, O, T, Y, S>>
-    ExportTerm<TokenStream, O, T, Y, S> for If<O, T, Y, S, W>
+impl<C,O: RustOp, T, Y: Rust, S: RustSel, W: ExportTerm<TokenStream,C, O, T, Y, S>>
+    ExportTerm<TokenStream,C, O, T, Y, S> for If<O, T, Y, S, W>
 {
     fn go(
         &self,
-        mut s: impl FnMut(id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> TokenStream,
+        ctx: &mut C,
+        mut s: impl FnMut(&mut C,id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> TokenStream,
         f: &rat_ir::Func<O, T, Y, S>,
         body: TokenStream,
     ) -> anyhow::Result<TokenStream> {
@@ -188,9 +189,9 @@ impl<O: RustOp, T, Y: Rust, S: RustSel, W: ExportTerm<TokenStream, O, T, Y, S>>
         // };
         let e = match self.r#else.as_ref() {
             None => quote!(),
-            Some(x) => x.go(&mut s, f, quote! {})?,
+            Some(x) => x.go(ctx,&mut s, f, quote! {})?,
         };
-        let t = self.then.go(s, f, quote! {})?;
+        let t = self.then.go(ctx,s, f, quote! {})?;
         return Ok(quote! {
             #body
             if #i != 0{
@@ -201,36 +202,38 @@ impl<O: RustOp, T, Y: Rust, S: RustSel, W: ExportTerm<TokenStream, O, T, Y, S>>
         });
     }
 }
-pub trait RustCatch<O: RustOp, T, Y: Rust, S: RustSel>:
-    ExportTerm<TokenStream, O, T, Y, S>
+pub trait RustCatch<C,O: RustOp, T, Y: Rust, S: RustSel>:
+    ExportTerm<TokenStream,C, O, T, Y, S>
 {
-    fn bundle(&self, body: TokenStream) -> TokenStream;
+    fn bundle(&self,ctx: &mut C, body: TokenStream) -> TokenStream;
     fn unbundle(
         &self,
+        ctx: &mut C,
         a: TokenStream,
-        s: impl FnMut(id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> TokenStream,
+        s: impl FnMut(&mut C,id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> TokenStream,
         f: &rat_ir::Func<O, T, Y, S>,
     ) -> anyhow::Result<TokenStream>;
 }
-impl<O: RustOp, T, Y: Rust, S: RustSel, W: RustCatch<O, T, Y, S>>
-    ExportTerm<TokenStream, O, T, Y, S> for Catch<O, T, Y, S, W>
+impl<C,O: RustOp, T, Y: Rust, S: RustSel, W: RustCatch<C,O, T, Y, S>>
+    ExportTerm<TokenStream,C, O, T, Y, S> for Catch<O, T, Y, S, W>
 {
     fn go(
         &self,
-        mut s: impl FnMut(id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> TokenStream,
+        ctx: &mut C,
+        mut s: impl FnMut(&mut C,id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> TokenStream,
         f: &rat_ir::Func<O, T, Y, S>,
         body: TokenStream,
     ) -> anyhow::Result<TokenStream> {
-        let bundle = self.wrapped.bundle(body);
+        let bundle = self.wrapped.bundle(ctx,body);
         let n = quote! {
             (||{
                 return Ok::<_,anyhow::Error>(#bundle);
             })()
         };
-        let u = self.wrapped.unbundle(quote! {a}, &mut s, f)?;
+        let u = self.wrapped.unbundle(ctx,quote! {a}, &mut s, f)?;
         let y = match self.catch.as_ref() {
             Some(a) => {
-                let y = s.target(f, &a, vec![quote! {y}]);
+                let y = s.target(ctx,f, &a, vec![quote! {y}]);
                 quote! {
                     match e.downcast(){
                         Err(x) => return Err(x),
@@ -254,14 +257,14 @@ impl<O: RustOp, T, Y: Rust, S: RustSel, W: RustCatch<O, T, Y, S>>
         })
     }
 }
-impl<O: RustOp, T, Y: Rust + Clone, S: RustSel + Clone> RustCatch<O, T, Y, S>
+impl<C,O: RustOp, T, Y: Rust + Clone, S: RustSel + Clone> RustCatch<C,O, T, Y, S>
     for BlockTarget<O, T, Y, S>
 {
-    fn bundle(&self, body: TokenStream) -> TokenStream {
+    fn bundle(&self,ctx: &mut C, body: TokenStream) -> TokenStream {
         let xs = self
             .args
             .iter()
-            .map(|x| ToIdAst::ssa::<O, T, S, Y, TokenStream>(&x.value));
+            .map(|x| ToIdAst::ssa::<C,O, T, S, Y, TokenStream>(&x.value));
         quote! {
             #body;
             (#(#xs),*)
@@ -270,11 +273,12 @@ impl<O: RustOp, T, Y: Rust + Clone, S: RustSel + Clone> RustCatch<O, T, Y, S>
 
     fn unbundle(
         &self,
+        ctx: &mut C,
         a: TokenStream,
-        mut s: impl FnMut(id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> TokenStream,
+        mut s: impl FnMut(&mut C,id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> TokenStream,
         f: &rat_ir::Func<O, T, Y, S>,
     ) -> anyhow::Result<TokenStream> {
-        let x = s(self.block);
+        let x = s(ctx,self.block);
         let tys = self.block_types(f);
         let mut before = vec![];
         before.extend(self.args.iter().enumerate().map(|(i, a2)| {
@@ -286,9 +290,10 @@ impl<O: RustOp, T, Y: Rust + Clone, S: RustSel + Clone> RustCatch<O, T, Y, S>
         }));
         let mut r = quote! {};
         for x in before.iter().zip(tys).enumerate().map(|(i, (x, y))| {
-            <TokenStream as ExportAst<O, T, S, Y>>::assign(
+            <TokenStream as ExportAst<C,O, T, S, Y>>::assign(
                 &x,
-                <TokenStream as ExportAst<O, T, S, Y>>::Var::from(format!(
+                ctx,
+                <TokenStream as ExportAst<C,O, T, S, Y>>::Var::from(format!(
                     "bp{i}at{}",
                     self.block.index()
                 )),
@@ -303,8 +308,8 @@ impl<O: RustOp, T, Y: Rust + Clone, S: RustSel + Clone> RustCatch<O, T, Y, S>
         })
     }
 }
-impl<O: RustOp, T, Y: Rust + Clone, S: RustSel + Clone, W: RustCatch<O,T,Y,S>> RustCatch<O,T,Y,S> for If<O,T,Y,S,W>{
-    fn bundle(&self, body: TokenStream) -> TokenStream {
+impl<C,O: RustOp, T, Y: Rust + Clone, S: RustSel + Clone, W: RustCatch<C,O,T,Y,S>> RustCatch<C,O,T,Y,S> for If<O,T,Y,S,W>{
+    fn bundle(&self,ctx: &mut C, body: TokenStream) -> TokenStream {
         let i = Ident::new(&format!("ssa{}", self.val.value.index()), Span::call_site());
         let se = self.val.select.rust(&quote! {#i});
         // let i = quote!{
@@ -312,9 +317,9 @@ impl<O: RustOp, T, Y: Rust + Clone, S: RustSel + Clone, W: RustCatch<O,T,Y,S>> R
         // };
         let e = match self.r#else.as_ref() {
             None => quote!(()),
-            Some(x) => x.bundle(quote! {}),
+            Some(x) => x.bundle(ctx,quote! {}),
         };
-        let t = self.then.bundle(quote! {});
+        let t = self.then.bundle(ctx,quote! {});
         return quote! {
             #body;
             if #i != 0{
@@ -327,14 +332,15 @@ impl<O: RustOp, T, Y: Rust + Clone, S: RustSel + Clone, W: RustCatch<O,T,Y,S>> R
 
     fn unbundle(
         &self,
+        ctx: &mut C,
         a: TokenStream,
-        mut s: impl FnMut(id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> TokenStream,
+        mut s: impl FnMut(&mut C,id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> TokenStream,
         f: &rat_ir::Func<O, T, Y, S>,
     ) -> anyhow::Result<TokenStream> {
-        let t = self.then.unbundle(quote! {a}, &mut s, f)?;
+        let t = self.then.unbundle(ctx,quote! {a}, &mut s, f)?;
         let e = match self.r#else.as_ref(){
             None => quote! {},
-            Some(x) => x.unbundle(quote! {b}, &mut s, f)?
+            Some(x) => x.unbundle(ctx,quote! {b}, &mut s, f)?
         };
         Ok(quote! {
             match #a{

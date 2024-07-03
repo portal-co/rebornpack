@@ -240,18 +240,19 @@ impl CLike for Swift {
         Self(format!("l{id}: while(1){{{}}};", self.0))
     }
 }
-impl<O: ScrOp<Java>, T, Y, S, W: ExportTerm<ScrCLikeAst<Java>, O, T, Y, S>>
-    ExportTerm<ScrCLikeAst<Java>, O, T, Y, S> for Catch<O, T, Y, S, W>
+impl<C,O: ScrOp<Java>, T, Y, S, W: ExportTerm<ScrCLikeAst<Java>,C, O, T, Y, S>>
+    ExportTerm<ScrCLikeAst<Java>,C, O, T, Y, S> for Catch<O, T, Y, S, W>
 {
     fn go(
         &self,
-        mut s: impl FnMut(id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> ScrCLikeAst<Java>,
+        ctx: &mut C,
+        mut s: impl FnMut(&mut C,id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> ScrCLikeAst<Java>,
         f: &rat_ir::Func<O, T, Y, S>,
         body: ScrCLikeAst<Java>,
     ) -> anyhow::Result<ScrCLikeAst<Java>> {
         use rat_ast::export::EmitTarget;
         let Some(k) = self.catch.as_ref() else {
-            return self.wrapped.go(s, f, body);
+            return self.wrapped.go(ctx,s, f, body);
         };
         Ok(ScrCLikeAst(
             format!(
@@ -260,25 +261,26 @@ impl<O: ScrOp<Java>, T, Y, S, W: ExportTerm<ScrCLikeAst<Java>, O, T, Y, S>>
                 }}catch(Throwable _catch){{
                     {}
                 }}",
-                self.wrapped.go(&mut s, f, body)?.0,
-                s.target(f, k, vec![ScrCLikeAst(format!("_catch").into())])
+                self.wrapped.go(ctx,&mut s, f, body)?.0,
+                s.target(ctx,f, k, vec![ScrCLikeAst(format!("_catch").into())])
             )
             .into(),
         ))
     }
 }
-impl<O: ScrOp<ECMAScript>, T, Y, S, W: ExportTerm<ScrCLikeAst<ECMAScript>, O, T, Y, S>>
-    ExportTerm<ScrCLikeAst<ECMAScript>, O, T, Y, S> for Catch<O, T, Y, S, W>
+impl<C,O: ScrOp<ECMAScript>, T, Y, S, W: ExportTerm<ScrCLikeAst<ECMAScript>,C, O, T, Y, S>>
+    ExportTerm<ScrCLikeAst<ECMAScript>,C, O, T, Y, S> for Catch<O, T, Y, S, W>
 {
     fn go(
         &self,
-        mut s: impl FnMut(id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> ScrCLikeAst<ECMAScript>,
+        ctx: &mut C,
+        mut s: impl FnMut(&mut C,id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> ScrCLikeAst<ECMAScript>,
         f: &rat_ir::Func<O, T, Y, S>,
         body: ScrCLikeAst<ECMAScript>,
     ) -> anyhow::Result<ScrCLikeAst<ECMAScript>> {
         use rat_ast::export::EmitTarget;
         let Some(k) = self.catch.as_ref() else {
-            return self.wrapped.go(s, f, body);
+            return self.wrapped.go(ctx,s, f, body);
         };
         Ok(ScrCLikeAst(
             format!(
@@ -287,25 +289,26 @@ impl<O: ScrOp<ECMAScript>, T, Y, S, W: ExportTerm<ScrCLikeAst<ECMAScript>, O, T,
                 }}catch(_catch){{
                     {}
                 }}",
-                self.wrapped.go(&mut s, f, body)?.0,
-                s.target(f, k, vec![ScrCLikeAst(format!("_catch").into())])
+                self.wrapped.go(ctx,&mut s, f, body)?.0,
+                s.target(ctx,f, k, vec![ScrCLikeAst(format!("_catch").into())])
             )
             .into(),
         ))
     }
 }
-impl<O: ScrOp<C>, T, Y, S, W: ExportTerm<ScrCLikeAst<C>, O, T, Y, S>>
-    ExportTerm<ScrCLikeAst<C>, O, T, Y, S> for Catch<O, T, Y, S, W>
+impl<X,O: ScrOp<C>, T, Y, S, W: ExportTerm<ScrCLikeAst<C>,X, O, T, Y, S>>
+    ExportTerm<ScrCLikeAst<C>,X, O, T, Y, S> for Catch<O, T, Y, S, W>
 {
     fn go(
         &self,
-        mut s: impl FnMut(id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> ScrCLikeAst<C>,
+        ctx: &mut X,
+        mut s: impl FnMut(&mut X,id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> ScrCLikeAst<C>,
         f: &rat_ir::Func<O, T, Y, S>,
         body: ScrCLikeAst<C>,
     ) -> anyhow::Result<ScrCLikeAst<C>> {
         use rat_ast::export::EmitTarget;
         let Some(k) = self.catch.as_ref() else {
-            return self.wrapped.go(s, f, body);
+            return self.wrapped.go(ctx,s, f, body);
         };
         Ok(ScrCLikeAst(
             format!(
@@ -314,8 +317,9 @@ impl<O: ScrOp<C>, T, Y, S, W: ExportTerm<ScrCLikeAst<C>, O, T, Y, S>>
                 }}catch(...){{
                     {}
                 }}",
-                self.wrapped.go(&mut s, f, body)?.0,
+                self.wrapped.go(ctx,&mut s, f, body)?.0,
                 s.target(
+                    ctx,
                     f,
                     k,
                     vec![ScrCLikeAst(format!("std::current_exception()").into())]

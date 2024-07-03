@@ -16,7 +16,7 @@ use crate::{
 };
 #[derive(Debug)]
 pub struct PerID<A, B> {
-    data: Vec<B>,
+    pub data: Vec<B>,
     default: B,
     phantom: PhantomData<Id<A>>,
 }

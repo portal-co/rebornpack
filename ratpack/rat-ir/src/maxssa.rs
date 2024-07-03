@@ -46,6 +46,7 @@ impl<O: Clone, T: SaneTerminator<O, T, Y, S> + Clone, Y: Clone, S: Default + Clo
         for block in body.blocks.iter().map(|a| a.0).collect::<Vec<_>>() {
             self.visit(body, block);
         }
+        // eprintln!("{:?}",self.new_args.data.iter().enumerate().map(|(a,b)|(a,b.iter().map(|a|a.value.index()).collect::<Vec<_>>())).collect::<Vec<_>>());
         self.update(body);
     }
 
@@ -85,9 +86,16 @@ impl<O: Clone, T: SaneTerminator<O, T, Y, S> + Clone, Y: Clone, S: Default + Clo
         if self.value_map.contains_key(&(block, value.value)) {
             return;
         }
-        if body.blocks[block].insts.binary_search(&value.value).is_ok() {
-            return;
+        // if body.blocks[block].insts.binary_search_by(|a|a.index().cmp(&value.value.index())).is_ok() {
+        //     eprintln!("in block value: {}@{}",value.value.index(),block.index());
+        //     return;
+        // }
+        for i in body.blocks[block].insts.iter(){
+            if *i == value.value{
+                return;
+            }
         }
+        // eprintln!("{:?}",body.blocks[block].insts.iter().map(|a|a.index()).collect::<Vec<_>>());
         self.new_args[block].push(value.clone());
 
         // Create a placeholder value.

@@ -1,7 +1,7 @@
 use import::Canon;
 use once_cell::sync::Lazy;
 use proc_macro2::{Span, TokenStream};
-use prost::Message;
+// use prost::Message;
 use quasiquote::quasiquote;
 use quote::{format_ident, quote};
 use rat_ast::export::rust::{Rust, RustOp};
@@ -10,20 +10,21 @@ use rat_ir::{
 };
 use syn::Ident;
 use waffle::{util::new_sig, FunctionBody, MemoryArg, Module, Operator, SignatureData};
-pub mod rat {
-    pub mod waffle {
-        pub mod rt {
-            include!(concat!(env!("OUT_DIR"), "/rat.waffle.rt.rs"));
-        }
-    }
-}
+// pub mod rat {
+//     pub mod waffle {
+//         pub mod rt {
+//             include!(concat!(env!("OUT_DIR"), "/rat.waffle.rt.rs"));
+//         }
+//     }
+// }
 
-pub static RT: Lazy<Option<rat::waffle::rt::Rt>> =
-    Lazy::new(|| rat::waffle::rt::Rt::decode(&include_bytes!(env!("RW_RT"))[..]).ok());
+// pub static RT: Lazy<Option<rat::waffle::rt::Rt>> =
+//     Lazy::new(|| rat::waffle::rt::Rt::decode(&include_bytes!(env!("RW_RT"))[..]).ok());
 
 pub mod export;
 pub mod import;
 pub mod wars;
+pub mod detect;
 
 #[cfg(test)]
 mod tests {
@@ -124,4 +125,7 @@ impl<C: 'static, T: Push<C> + 'static> Push<C> for Host<T> {
             }),
         }
     }
+}
+pub struct WasmInfer{
+    
 }

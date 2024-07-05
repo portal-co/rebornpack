@@ -133,8 +133,13 @@ impl<O, T, Y, S, W: SaneTerminator<O, T, Y, S>> SaneTerminator<O, T, Y, S> for I
             .chain(self.r#else.iter_mut().flat_map(|b| b.t2s_mut()))
     }
 }
-pub trait Bt<O, T, Y, S> {
+pub trait Bt<O, T, Y, S>: Push<BlockTarget<O,T,Y,S>> {
     fn bt(x: BlockTarget<O, T, Y, S>) -> Self;
+}
+impl<O,T,Y,S,A: Push<BlockTarget<O,T,Y,S>>> Bt<O,T,Y,S> for A{
+    fn bt(x: BlockTarget<O, T, Y, S>) -> Self {
+        Self::push(x).map_right(|_|()).unwrap_left()
+    }
 }
 pub trait Extract<A> {
     fn extract(&self) -> A;
@@ -229,9 +234,11 @@ no_push!(
 no_push!(
     type Option<T>;
 );
-pub struct DropGuest {}
+pub struct DropGuest<Y> {
+    pub ty: Y
+}
 no_push!(
-    type DropGuest;
+    type DropGuest<Y>;
 );
 
 pub struct Catch<O, T, Y, S, W> {

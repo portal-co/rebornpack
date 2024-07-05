@@ -1,20 +1,42 @@
 use std::{marker::PhantomData, mem::take};
 
-use crate::{
-    dom::{self, dominates},
-    maxssa::MaxSSA,
-    util::{DropGuest, Push},
-    BlockTarget, Func, SaneTerminator, Use,
-};
+use either::Either;
 
+use crate::{
+    dom::{self, dominates}, maxssa::MaxSSA, util::Push, BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Func, SaneTerminator, Use
+};
+pub trait DropGuest<C, Y>: Sized {
+    fn drg(ctx: &mut C, y: &Y) -> anyhow::Result<Self>;
+}
+impl<C,Y,A: DropGuest<C,Y>,B: DropGuest<C,Y>> DropGuest<C,Y> for Either<A,B>{
+    fn drg(ctx: &mut C, y: &Y) -> anyhow::Result<Self> {
+        let ae = match A::drg(ctx, y){
+            Ok(a) => return Ok(Either::Left(a)),
+            Err(e) => e,
+        };
+        let be = match B::drg(ctx, y){
+            Ok(a) => return Ok(Either::Right(a)),
+            Err(e) => e,
+        };
+        return Err(anyhow::anyhow!("{ae}; {be}"));
+    }
+}
+impl<C,B: Bound> DropGuest<C,BoundType<B>> for BoundOp<B> where B::O<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: DropGuest<C,B::Y<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>>{
+    fn drg(ctx: &mut C, y: &BoundType<B>) -> anyhow::Result<Self> {
+        Ok(BoundOp(B::O::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::drg(ctx, &y.0)?))
+    }
+}
 pub fn droppify<
-    O: Push<DropGuest>,
+    C,
+    O: DropGuest<C, Y>,
     T: Default + SaneTerminator<O, T, Y, S> + Push<BlockTarget<O, T, Y, S>>,
     Y: Clone + Default,
     S: Clone + Default,
 >(
     f: &mut Func<O, T, Y, S>,
-) where
+    ctx: &mut C,
+) -> anyhow::Result<()>
+where
     Func<O, T, Y, S>: MaxSSA,
 {
     f.maxssa();
@@ -48,7 +70,7 @@ pub fn droppify<
                 .collect::<Vec<_>>()
             {
                 let j = f.opts.alloc(crate::Value::Operator(
-                    O::push(DropGuest {}).map_right(|_| ()).unwrap_left(),
+                    O::drg(ctx, f.opts[i].ty())?,
                     vec![Use {
                         value: i,
                         select: S::default(),
@@ -63,4 +85,5 @@ pub fn droppify<
         }
         f.blocks[k].term = t;
     }
+    Ok(())
 }

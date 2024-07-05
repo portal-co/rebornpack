@@ -10,7 +10,7 @@ use rat_ir::{
     BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Call, Func, SaneTerminator,
     Use, Value,
 };
-use waffle::{entity::PerEntity, Block, FunctionBody, Operator, Terminator};
+use waffle::{entity::PerEntity, Block, FunctionBody, Operator, Signature, Table, Terminator};
 
 use crate::OpWrapper;
 pub trait ImportOp<O, T, Y, S> {
@@ -111,8 +111,8 @@ impl<O: Push<OpWrapper>, T, Y, S> ImportOp<O, T, Y, S> for Normal<()> {
         return Ok((v, k));
     }
 }
-impl<W, O, T: Push<WaffleTerm<O, T, Y, S>>, Y, S: Push<Option<usize>>> ImportTerm<O, T, Y, S>
-    for Normal<W>
+impl<W, O, T: Push<WaffleTerm<O, T, Y, S, waffle::Func>>, Y, S: Push<Option<usize>>>
+    ImportTerm<O, T, Y, S> for Normal<W>
 {
     fn term(
         &mut self,
@@ -222,11 +222,63 @@ impl<W, O, T: Push<WaffleTerm<O, T, Y, S>>, Y, S: Push<Option<usize>>> ImportTer
                     .unwrap_left();
                 Ok(())
             }
+            Terminator::ReturnCall { func, args } => {
+                let values = args
+                    .iter()
+                    .map(|v| mapper[*v].unwrap())
+                    .map(|a| Use {
+                        value: a,
+                        select: S::push(None).map_right(|_| ()).unwrap_left(),
+                    })
+                    .collect();
+                dst.blocks[k].term = T::push(WaffleTerm::ReturnCall {
+                    func: *func,
+                    args: values,
+                })
+                .map_right(|_| ())
+                .unwrap_left();
+                Ok(())
+            }
+            Terminator::ReturnCallIndirect { sig,table, args } => {
+                let values = args
+                    .iter()
+                    .map(|v| mapper[*v].unwrap())
+                    .map(|a| Use {
+                        value: a,
+                        select: S::push(None).map_right(|_| ()).unwrap_left(),
+                    })
+                    .collect();
+                dst.blocks[k].term = T::push(WaffleTerm::ReturnCallIndirect {
+                    table: *table,
+                    // sig: *sig,
+                    args: values,
+                })
+                .map_right(|_| ())
+                .unwrap_left();
+                Ok(())
+            }
+            Terminator::ReturnCallRef { sig, args } => {
+                let values = args
+                    .iter()
+                    .map(|v| mapper[*v].unwrap())
+                    .map(|a| Use {
+                        value: a,
+                        select: S::push(None).map_right(|_| ()).unwrap_left(),
+                    })
+                    .collect();
+                dst.blocks[k].term = T::push(WaffleTerm::ReturnCallRef {
+                    // sig: *sig,
+                    args: values,
+                })
+                .map_right(|_| ())
+                .unwrap_left();
+                Ok(())
+            }
             _ => Ok(()),
         }
     }
 }
-pub enum WaffleTerm<O, T, Y, S> {
+pub enum WaffleTerm<O, T, Y, S, F> {
     Br(BlockTarget<O, T, Y, S>),
     CondBr {
         cond: Use<O, T, Y, S>,
@@ -239,17 +291,30 @@ pub enum WaffleTerm<O, T, Y, S> {
         default: BlockTarget<O, T, Y, S>,
     },
     Ret(Vec<Use<O, T, Y, S>>),
+    ReturnCall {
+        func: F,
+        args: Vec<Use<O, T, Y, S>>,
+    },
+    ReturnCallIndirect {
+        table: Table,
+        // sig: Signature,
+        args: Vec<Use<O, T, Y, S>>,
+    },
+    ReturnCallRef {
+        // sig: Signature,
+        args: Vec<Use<O, T, Y, S>>,
+    },
     Unreachable,
 }
 no_push!(
-    type WaffleTerm<O, T, Y, S>;
+    type WaffleTerm<O, T, Y, S, F>;
 );
-impl<O, T, Y, S> Default for WaffleTerm<O, T, Y, S> {
+impl<O, T, Y, S, F> Default for WaffleTerm<O, T, Y, S, F> {
     fn default() -> Self {
         Self::Unreachable
     }
 }
-impl<O, T, Y: Clone, S: Clone> Clone for WaffleTerm<O, T, Y, S> {
+impl<O, T, Y: Clone, S: Clone, F: Clone> Clone for WaffleTerm<O, T, Y, S, F> {
     fn clone(&self) -> Self {
         match self {
             Self::Br(arg0) => Self::Br(arg0.clone()),
@@ -273,10 +338,23 @@ impl<O, T, Y: Clone, S: Clone> Clone for WaffleTerm<O, T, Y, S> {
             },
             Self::Ret(arg0) => Self::Ret(arg0.clone()),
             Self::Unreachable => Self::Unreachable,
+            Self::ReturnCall { func, args } => Self::ReturnCall {
+                func: func.clone(),
+                args: args.clone(),
+            },
+            Self::ReturnCallIndirect { table, args } => Self::ReturnCallIndirect {
+                table: *table,
+                // sig: *sig,
+                args: args.clone(),
+            },
+            Self::ReturnCallRef {  args } => Self::ReturnCallRef {
+                // sig: *sig,
+                args: args.clone(),
+            },
         }
     }
 }
-impl<O, T, Y, S> SaneTerminator<O, T, Y, S> for WaffleTerm<O, T, Y, S> {
+impl<O, T, Y, S, F> SaneTerminator<O, T, Y, S> for WaffleTerm<O, T, Y, S, F> {
     fn uses<'a>(&'a self) -> impl Iterator<Item = &'a Use<O, T, Y, S>> + 'a
     where
         O: 'a,
@@ -308,6 +386,9 @@ impl<O, T, Y, S> SaneTerminator<O, T, Y, S> for WaffleTerm<O, T, Y, S> {
             ))),
             WaffleTerm::Ret(r) => Either::Left(r.iter()),
             WaffleTerm::Unreachable => Either::Right(Either::Right(Either::Left(empty()))),
+            WaffleTerm::ReturnCall { func, args } => Either::Left(args.iter()),
+            WaffleTerm::ReturnCallIndirect { table, args } => Either::Left(args.iter()),
+            WaffleTerm::ReturnCallRef { args } => Either::Left(args.iter()),
         }
     }
 
@@ -342,6 +423,9 @@ impl<O, T, Y, S> SaneTerminator<O, T, Y, S> for WaffleTerm<O, T, Y, S> {
             ))),
             WaffleTerm::Ret(r) => Either::Left(r.iter_mut()),
             WaffleTerm::Unreachable => Either::Right(Either::Right(Either::Left(empty()))),
+            WaffleTerm::ReturnCall { func, args } => Either::Left(args.iter_mut()),
+            WaffleTerm::ReturnCallIndirect { table, args } => Either::Left(args.iter_mut()),
+            WaffleTerm::ReturnCallRef {  args } => Either::Left(args.iter_mut()),
         }
     }
 
@@ -364,7 +448,7 @@ impl<O, T, Y, S> SaneTerminator<O, T, Y, S> for WaffleTerm<O, T, Y, S> {
                 cases,
                 default,
             } => Either::Right(Either::Right(vec![default].into_iter().chain(cases.iter()))),
-            WaffleTerm::Ret(_) | WaffleTerm::Unreachable => Either::Left(empty()),
+            _ => Either::Left(empty()),
         }
     }
 
@@ -389,14 +473,14 @@ impl<O, T, Y, S> SaneTerminator<O, T, Y, S> for WaffleTerm<O, T, Y, S> {
             } => Either::Right(Either::Right(
                 vec![default].into_iter().chain(cases.iter_mut()),
             )),
-            WaffleTerm::Ret(_) | WaffleTerm::Unreachable => Either::Left(empty()),
+            _ => Either::Left(empty()),
         }
     }
 }
-impl<O, T, Y: Extract<Y2>, S: Extract<S2>, O2, T2, Y2, S2> NormalTerm<O, T, Y, S, O2, T2, Y2, S2>
-    for WaffleTerm<O, T, Y, S>
+impl<O, T, Y: Extract<Y2>, S: Extract<S2>, O2, T2, Y2, S2, F: Clone>
+    NormalTerm<O, T, Y, S, O2, T2, Y2, S2> for WaffleTerm<O, T, Y, S, F>
 {
-    type Then = WaffleTerm<O2, T2, Y2, S2>;
+    type Then = WaffleTerm<O2, T2, Y2, S2, F>;
 
     fn norm(
         &self,
@@ -450,13 +534,44 @@ impl<O, T, Y: Extract<Y2>, S: Extract<S2>, O2, T2, Y2, S2> NormalTerm<O, T, Y, S
                     .collect(),
             ),
             WaffleTerm::Unreachable => WaffleTerm::Unreachable,
+            WaffleTerm::ReturnCall { func, args } => WaffleTerm::ReturnCall {
+                func: func.clone(),
+                args: args
+                    .iter()
+                    .map(|a| Use {
+                        value: m.get(&a.value).copied().unwrap(),
+                        select: a.select.extract(),
+                    })
+                    .collect(),
+            },
+            WaffleTerm::ReturnCallIndirect { table, args } => WaffleTerm::ReturnCallIndirect {
+                table: *table,
+                // sig: *sig,
+                args: args
+                    .iter()
+                    .map(|a| Use {
+                        value: m.get(&a.value).copied().unwrap(),
+                        select: a.select.extract(),
+                    })
+                    .collect(),
+            },
+            WaffleTerm::ReturnCallRef {  args } => WaffleTerm::ReturnCallRef {
+                // sig: *sig,
+                args: args
+                    .iter()
+                    .map(|a| Use {
+                        value: m.get(&a.value).copied().unwrap(),
+                        select: a.select.extract(),
+                    })
+                    .collect(),
+            },
         }
     }
 }
-impl<O, T, Y: Extract<Y2>, S: Extract<S2>, O2, T2, Y2, S2, C>
-    NormalTermIn<C, O, T, Y, S, O2, T2, Y2, S2> for WaffleTerm<O, T, Y, S>
+impl<O, T, Y: Extract<Y2>, S: Extract<S2>, O2, T2, Y2, S2, C, F: Clone>
+    NormalTermIn<C, O, T, Y, S, O2, T2, Y2, S2> for WaffleTerm<O, T, Y, S, F>
 {
-    type Then = WaffleTerm<O2, T2, Y2, S2>;
+    type Then = WaffleTerm<O2, T2, Y2, S2, F>;
 
     fn norm(
         &self,
@@ -511,6 +626,37 @@ impl<O, T, Y: Extract<Y2>, S: Extract<S2>, O2, T2, Y2, S2, C>
                     .collect(),
             ),
             WaffleTerm::Unreachable => WaffleTerm::Unreachable,
+            WaffleTerm::ReturnCall { func, args } => WaffleTerm::ReturnCall {
+                func: func.clone(),
+                args: args
+                    .iter()
+                    .map(|a| Use {
+                        value: m.get(&a.value).copied().unwrap(),
+                        select: a.select.extract(),
+                    })
+                    .collect(),
+            },
+            WaffleTerm::ReturnCallIndirect { table, args } => WaffleTerm::ReturnCallIndirect {
+                table: *table,
+                // sig: *sig,
+                args: args
+                    .iter()
+                    .map(|a| Use {
+                        value: m.get(&a.value).copied().unwrap(),
+                        select: a.select.extract(),
+                    })
+                    .collect(),
+            },
+            WaffleTerm::ReturnCallRef {  args } => WaffleTerm::ReturnCallRef {
+                // sig: *sig,
+                args: args
+                    .iter()
+                    .map(|a| Use {
+                        value: m.get(&a.value).copied().unwrap(),
+                        select: a.select.extract(),
+                    })
+                    .collect(),
+            },
         }
     }
 }
@@ -594,7 +740,7 @@ pub struct CanonCall {}
 impl Bound for CanonCall {
     type O<O, T, Y, S> = Either<Call<O, T, Y, S>, OpWrapper>;
 
-    type T<O, T, Y, S> = WaffleTerm<O, T, Y, S>;
+    type T<O, T, Y, S> = WaffleTerm<O, T, Y, S, Id<Func<O, T, Y, S>>>;
 
     type Y<O, T, Y, S> = Vec<waffle::Type>;
 
@@ -604,7 +750,7 @@ pub struct Canon {}
 impl Bound for Canon {
     type O<O, T, Y, S> = OpWrapper;
 
-    type T<O, T, Y, S> = WaffleTerm<O, T, Y, S>;
+    type T<O, T, Y, S> = WaffleTerm<O, T, Y, S, waffle::Func>;
 
     type Y<O, T, Y, S> = Vec<waffle::Type>;
 

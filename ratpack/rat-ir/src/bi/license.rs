@@ -32,6 +32,11 @@ impl<A: Taint, B: Taint> Taint for Either<A, B> {
         }
     }
 }
+impl<B: Bound> Taint for BoundOp<B> where B::O<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: Taint{
+    fn no_license(&mut self) {
+        self.0.no_license()
+    }
+}
 impl<
         C: Tracer<O, T, Y, S, O2, T2, Y2, S2>,
         O: Taint + Clone,
@@ -96,7 +101,7 @@ impl<
         mut go: impl FnMut(
             &mut super::State<O, T, Y, S, O2, T2, Y2, S2, Self>,
             &mut crate::Func<O2, T2, Y2, S2>,
-            Id<crate::Block<O, T, Y, S>>,
+            &BlockTarget<O, T, Y, S>,
             Self::Instance,
         ) -> anyhow::Result<Id<crate::Block<O2, T2, Y2, S2>>>,
         valmap: &std::collections::BTreeMap<
@@ -105,7 +110,7 @@ impl<
         >,
         new: &mut crate::Func<O2, T2, Y2, S2>,
         k: Id<crate::Block<O2, T2, Y2, S2>>,
-        old: &Func<O, T, Y, S>,
+        // old: &Func<O, T, Y, S>,
         span: Option<Span>
     ) -> anyhow::Result<()> {
         let st2 = unsafe {
@@ -163,7 +168,7 @@ impl<
             valmap,
             new,
             k,
-            old,
+            // old,
             span.clone(),
         );
         // let b: Vec<_> = [true, false]

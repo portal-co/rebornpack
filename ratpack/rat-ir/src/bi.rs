@@ -138,19 +138,41 @@ pub trait Tracer<O, T, Y, S, O2, T2, Y2, S2>: Sized {
         go: impl FnMut(
             &mut State<O, T, Y, S, O2, T2, Y2, S2, Self>,
             &mut Func<O2, T2, Y2, S2>,
-            Id<Block<O, T, Y, S>>,
+            &BlockTarget<O, T, Y, S>,
+            
             Self::Instance,
         ) -> anyhow::Result<Id<Block<O2, T2, Y2, S2>>>,
         valmap: &BTreeMap<Id<crate::Value<O, T, Y, S>>, Arc<Self::Meta>>,
         new: &mut Func<O2, T2, Y2, S2>,
         k: Id<Block<O2, T2, Y2, S2>>,
-        old: &Func<O,T,Y,S>,
+        // old: &Func<O, T, Y, S>,
         span: Option<Span>,
     ) -> anyhow::Result<()>;
 }
 pub struct State<O, T, Y, S, O2, T2, Y2, S2, C: Tracer<O, T, Y, S, O2, T2, Y2, S2>> {
     pub tracer: C,
     pub in_map: BTreeMap<(Id<Block<O, T, Y, S>>, C::Instance), Id<Block<O2, T2, Y2, S2>>>,
+}
+pub fn trace_func<O, T, Y, S, O2, T2: Default, Y2, S2, C: Tracer<O, T, Y, S, O2, T2, Y2, S2>>(
+    tracer: &mut C,
+    old: &Func<O, T, Y, S>,
+    new: &mut Func<O2, T2, Y2, S2>,
+    // k: Id<Block<O, T, Y, S>>,
+    i: C::Instance,
+) -> anyhow::Result<()> {
+    return replace_with::replace_with_or_abort_and_return(tracer, move|tracer|{
+        // let mut x = Default::default();
+        let mut state = State {
+            tracer,
+            in_map: BTreeMap::new(),
+        };
+        let k = match trace_block(&mut state, old, new, old.entry, i) {
+            Ok(a) => a,
+            Err(e) => return (Err(e), state.tracer),
+        };
+        new.entry = k;
+        return (Ok(()), state.tracer);
+    })
 }
 pub fn trace_block<O, T, Y, S, O2, T2: Default, Y2, S2, C: Tracer<O, T, Y, S, O2, T2, Y2, S2>>(
     state: &mut State<O, T, Y, S, O2, T2, Y2, S2, C>,
@@ -189,19 +211,38 @@ pub fn trace_block<O, T, Y, S, O2, T2: Default, Y2, S2, C: Tracer<O, T, Y, S, O2
                         .iter()
                         .map(|u| {
                             let a = &**values.get(&u.value).context("in getting the value")?;
-                            let (s, b) = state.tracer.select(&i, a, &u.select,y, new, w,old.spans[u.value].clone())?;
+                            let (s, b) = state.tracer.select(
+                                &i,
+                                a,
+                                &u.select,
+                                y,
+                                new,
+                                w,
+                                old.spans[u.value].clone(),
+                            )?;
                             w = b;
                             Ok(s)
                         })
                         .collect::<anyhow::Result<Vec<_>>>()?;
-                    let (s, b) = state.tracer.op(&i, o,y, &ms, new, w,old.spans[*inst].clone())?;
+                    let (s, b) =
+                        state
+                            .tracer
+                            .op(&i, o, y, &ms, new, w, old.spans[*inst].clone())?;
                     w = b;
                     Arc::new(s)
                 }
                 crate::Value::BlockParam(i, _, _) => params[*i].clone(),
                 crate::Value::Alias(u, y) => {
                     let a = &**values.get(&u.value).context("in getting the value")?;
-                    let (s, b) = state.tracer.select(&i, a, &u.select,y, new, w,old.spans[u.value].clone())?;
+                    let (s, b) = state.tracer.select(
+                        &i,
+                        a,
+                        &u.select,
+                        y,
+                        new,
+                        w,
+                        old.spans[u.value].clone(),
+                    )?;
                     w = b;
                     Arc::new(s)
                 }
@@ -212,11 +253,11 @@ pub fn trace_block<O, T, Y, S, O2, T2: Default, Y2, S2, C: Tracer<O, T, Y, S, O2
         state,
         &i,
         &old.blocks[k].term,
-        |a, new, b, c| trace_block(a, old, new, b, c),
+        |a, new, b, c| trace_block(a, old, new, b.block, c),
         &values,
         new,
         w,
-        old,
+        // old,
         old.blocks[k].term_span.clone(),
     )?;
 

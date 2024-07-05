@@ -30,21 +30,21 @@ pub enum Mapper<'a, O, T, Y, S, D> {
     Intrinsic(O),
 }
 pub trait TinyOp<O, T, Y, S>: Clone {
-    fn null() -> Self;
+    fn null() -> Option<Self>;
     fn call(a: Id<Func<O, T, Y, S>>) -> Option<Self>;
-    fn intrinsic(module: Atom, name: Atom) -> Self;
-    fn bin(o: &BinaryOp) -> Self;
-    fn unary(a: &UnaryOp) -> Self;
-    fn str(a: Atom) -> Self;
-    fn num(a: f64) -> Self;
+    fn intrinsic(module: Atom, name: Atom) -> Option<Self>;
+    fn bin(o: &BinaryOp) -> Option<Self>;
+    fn unary(a: &UnaryOp) -> Option<Self>;
+    fn str(a: Atom) -> Option<Self>;
+    fn num(a: f64) -> Option<Self>;
 }
 impl<B: Bound> TinyOp<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>> for BoundOp<B>
 where
     B::O<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>:
         TinyOp<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
 {
-    fn null() -> Self {
-        Self(B::O::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::null())
+    fn null() -> Option<BoundOp<B>> {
+        Some(Self(B::O::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::null()?))
     }
 
     fn call(a: Id<Func<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>>) -> Option<Self> {
@@ -56,26 +56,26 @@ where
         >::call(a)?))
     }
 
-    fn intrinsic(module: Atom, name: Atom) -> Self {
-        Self(
-            B::O::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::intrinsic(module, name),
-        )
+    fn intrinsic(module: Atom, name: Atom) -> Option<BoundOp<B>> {
+        Some(Self(
+            B::O::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::intrinsic(module, name)?,
+        ))
     }
 
-    fn bin(o: &BinaryOp) -> Self {
-        Self(B::O::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::bin(o))
+    fn bin(o: &BinaryOp) -> Option<BoundOp<B>> {
+        Some(Self(B::O::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::bin(o)?))
     }
 
-    fn unary(a: &UnaryOp) -> Self {
-        Self(B::O::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::unary(a))
+    fn unary(a: &UnaryOp) -> Option<BoundOp<B>> {
+        Some(Self(B::O::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::unary(a)?))
     }
 
-    fn str(a: Atom) -> Self {
-        Self(B::O::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::str(a))
+    fn str(a: Atom) -> Option<BoundOp<B>> {
+        Some(Self(B::O::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::str(a)?))
     }
 
-    fn num(a: f64) -> Self {
-        Self(B::O::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::num(a))
+    fn num(a: f64) -> Option<BoundOp<B>> {
+        Some(Self(B::O::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::num(a)?))
     }
 }
 pub enum BasicTinyOp<O, T, Y, S> {
@@ -107,32 +107,32 @@ impl<O, T, Y, S> Clone for BasicTinyOp<O, T, Y, S> {
     }
 }
 impl<O, T, Y, S> TinyOp<O, T, Y, S> for BasicTinyOp<O, T, Y, S> {
-    fn null() -> Self {
-        Self::Null
+    fn null() -> Option<BasicTinyOp<O, T, Y, S>> {
+        Some(Self::Null)
     }
 
     fn call(a: Id<Func<O, T, Y, S>>) -> Option<BasicTinyOp<O, T, Y, S>> {
         Some(Self::Call(a))
     }
 
-    fn intrinsic(module: Atom, name: Atom) -> Self {
-        Self::Intrinsic { module, name }
+    fn intrinsic(module: Atom, name: Atom) -> Option<BasicTinyOp<O, T, Y, S>> {
+        Some(Self::Intrinsic { module, name })
     }
 
-    fn bin(o: &BinaryOp) -> Self {
-        Self::Bin(o.clone())
+    fn bin(o: &BinaryOp) -> Option<BasicTinyOp<O, T, Y, S>> {
+        Some(Self::Bin(o.clone()))
     }
 
-    fn unary(a: &UnaryOp) -> Self {
-        Self::Unary(a.clone())
+    fn unary(a: &UnaryOp) -> Option<BasicTinyOp<O, T, Y, S>> {
+        Some(Self::Unary(a.clone()))
     }
 
-    fn str(a: Atom) -> Self {
-        Self::Str(a)
+    fn str(a: Atom) -> Option<BasicTinyOp<O, T, Y, S>> {
+        Some(Self::Str(a))
     }
 
-    fn num(a: f64) -> Self {
-        Self::Num(a)
+    fn num(a: f64) -> Option<BasicTinyOp<O, T, Y, S>> {
+        Some(Self::Num(a))
     }
 }
 pub trait TinyTerm<O, T, Y, S>: Default {
@@ -140,9 +140,9 @@ pub trait TinyTerm<O, T, Y, S>: Default {
         a: Use<O, T, Y, S>,
         if_true: BlockTarget<O, T, Y, S>,
         if_false: BlockTarget<O, T, Y, S>,
-    ) -> Self;
-    fn just(a: BlockTarget<O, T, Y, S>) -> Self;
-    fn ret(a: Use<O, T, Y, S>) -> Self;
+    ) -> Option<Self>;
+    fn just(a: BlockTarget<O, T, Y, S>) -> Option<Self>;
+    fn ret(a: Use<O, T, Y, S>) -> Option<Self>;
 }
 impl<B: Bound> TinyTerm<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>> for BoundTerm<B>
 where
@@ -153,20 +153,20 @@ where
         a: Use<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
         if_true: BlockTarget<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
         if_false: BlockTarget<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
-    ) -> Self {
-        Self(
+    ) -> Option<BoundTerm<B>> {
+        Some(Self(
             B::T::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::r#if(
                 a, if_true, if_false,
-            ),
-        )
+            )?,
+        ))
     }
 
-    fn just(a: BlockTarget<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>) -> Self {
-        Self(B::T::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::just(a))
+    fn just(a: BlockTarget<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>) -> Option<BoundTerm<B>> {
+        Some(Self(B::T::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::just(a)?))
     }
 
-    fn ret(a: Use<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>) -> Self {
-        Self(B::T::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::ret(a))
+    fn ret(a: Use<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>) -> Option<BoundTerm<B>> {
+        Some(Self(B::T::<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>::ret(a)?))
     }
 }
 pub enum BasicTinyTerm<O, T, Y, S> {
@@ -207,20 +207,20 @@ impl<O, T, Y, S> TinyTerm<O, T, Y, S> for BasicTinyTerm<O, T, Y, S> {
         a: Use<O, T, Y, S>,
         if_true: BlockTarget<O, T, Y, S>,
         if_false: BlockTarget<O, T, Y, S>,
-    ) -> Self {
-        Self::If {
+    ) -> Option<BasicTinyTerm<O, T, Y, S>> {
+        Some(Self::If {
             cond: a,
             if_true,
             if_false,
-        }
+        })
     }
 
-    fn just(a: BlockTarget<O, T, Y, S>) -> Self {
-        Self::Just(a)
+    fn just(a: BlockTarget<O, T, Y, S>) -> Option<BasicTinyTerm<O, T, Y, S>> {
+        Some(Self::Just(a))
     }
 
-    fn ret(a: Use<O, T, Y, S>) -> Self {
-        Self::Ret(a)
+    fn ret(a: Use<O, T, Y, S>) -> Option<BasicTinyTerm<O, T, Y, S>> {
+        Some(Self::Ret(a))
     }
 }
 pub fn funcs<
@@ -276,7 +276,7 @@ pub fn funcs<
                                     swc_core::ecma::ast::ModuleExportName::Str(_) => None,
                                 })
                                 .context("in getting the import name")?,
-                        )),
+                        ).context("in getting the intrinsic")?),
                     );
                 }
                 swc_core::ecma::ast::ImportSpecifier::Default(_) => todo!(),
@@ -329,7 +329,7 @@ fn func<
     a: Id<Func<O, T, Y, S>>,
     m: &BTreeMap<Atom, Mapper<'_, O, T, Y, S, D>>,
     n: &mut rat_ir::module::Module<O, T, Y, S, D>,
-    ret: Arc<dyn Fn(Use<O, T, Y, S>) -> T>,
+    ret: Arc<dyn Fn(Use<O, T, Y, S>) -> Option<T>>,
     mut k: Id<Block<O,T,Y,S>>
 ) -> anyhow::Result<()> {
     let params: BTreeMap<Atom, _> = c
@@ -347,13 +347,13 @@ fn func<
     let init: BTreeMap<Atom, _> = snapshot
         .iter()
         .map(|x| {
-            (
+            Ok((
                 x.clone(),
                 match params.get(x) {
                     Some(a) => *a,
                     None => {
                         let v = n.funcs[a].opts.alloc(rat_ir::Value::Operator(
-                            O::null(),
+                            O::null().context("in getting null")?,
                             vec![],
                             Default::default(),
                             PhantomData,
@@ -362,9 +362,9 @@ fn func<
                         v
                     }
                 },
-            )
+            ))
         })
-        .collect();
+        .collect::<anyhow::Result<BTreeMap<Atom,_>>>()?;
     let mut init: Vec<_> = snapshot
         .iter()
         .flat_map(|x| init.get(x))
@@ -392,7 +392,7 @@ fn func<
         k = k2;
     }
     let v = n.funcs[a].opts.alloc(rat_ir::Value::Operator(
-        O::null(),
+        O::null().context("in getting null")?,
         vec![],
         Default::default(),
         PhantomData,
@@ -401,12 +401,12 @@ fn func<
     n.funcs[a].blocks[k].term = (ctx2.ret)(Use {
         value: v,
         select: S::default(),
-    });
+    }).context("in getting ret")?;
     return Ok(());
 }
 pub struct RCtx<O: TinyOp<O, T, Y, S>, T: TinyTerm<O, T, Y, S>, Y: Clone + Default, S: Default, D> {
     pub phantom: PhantomData<fn(O, T, Y, S, D)>,
-    pub ret: Arc<dyn Fn(Use<O, T, Y, S>) -> T>,
+    pub ret: Arc<dyn Fn(Use<O, T, Y, S>) -> Option<T>>,
     pub loops: BTreeMap<Option<Atom>, BC<O, T, Y, S>>,
 }
 impl<O: TinyOp<O, T, Y, S>, T: TinyTerm<O, T, Y, S>, Y: Clone + Default, S: Default, D> Clone
@@ -504,7 +504,7 @@ impl XAst for Stmt {
                     }
                     None => {
                         let v = n.funcs[a].opts.alloc(rat_ir::Value::Operator(
-                            O::null(),
+                            O::null().context("in getting null")?,
                             vec![],
                             Default::default(),
                             PhantomData,
@@ -516,7 +516,7 @@ impl XAst for Stmt {
                 let cv = (ctx.ret)(Use {
                     value: cv,
                     select: Default::default(),
-                });
+                }).context("in gtting ret")?;
                 n.funcs[a].blocks[k].term = cv;
                 let dummy = n.funcs[a].blocks.alloc(Default::default());
                 Ok(((), dummy))
@@ -533,7 +533,7 @@ impl XAst for Stmt {
                         })
                         .collect(),
                     prepend: vec![],
-                });
+                }).context("in gtting just")?;
                 for v in vars.iter_mut() {
                     let av = n.funcs[a].add_blockparam(then_block, Y::default());
                     *v = av;
@@ -564,7 +564,7 @@ impl XAst for Stmt {
                         })
                         .collect(),
                     prepend: vec![],
-                });
+                }).context("in gtting just")?;
                 for v in vars.iter_mut() {
                     let av = n.funcs[a].add_blockparam(done_block, Y::default());
                     *v = av;
@@ -586,7 +586,7 @@ impl XAst for Stmt {
                         })
                         .collect(),
                     prepend: vec![],
-                });
+                }).context("in gtting just")?;
                 let dummy = n.funcs[a].blocks.alloc(Default::default());
                 Ok(((), dummy))
             }
@@ -605,7 +605,7 @@ impl XAst for Stmt {
                         })
                         .collect(),
                     prepend: vec![],
-                });
+                }).context("in gtting just")?;
                 let dummy = n.funcs[a].blocks.alloc(Default::default());
                 Ok(((), dummy))
             }
@@ -628,7 +628,7 @@ impl XAst for Stmt {
                         args: vec![],
                         prepend: vec![],
                     },
-                );
+                ).context("in gtting if")?;
                 let mut true_vars = vars.to_owned();
                 let mut false_vars = vars.to_owned();
                 let (x, true_block) =
@@ -652,7 +652,7 @@ impl XAst for Stmt {
                         })
                         .collect(),
                     prepend: vec![],
-                });
+                }).context("in gtting just")?;
                 n.funcs[a].blocks[false_block].term = T::just(BlockTarget {
                     block: new,
                     args: false_vars
@@ -663,7 +663,7 @@ impl XAst for Stmt {
                         })
                         .collect(),
                     prepend: vec![],
-                });
+                }).context("in gtting just")?;
                 // let av = n.funcs[a].add_blockparam(new, Y::default());
                 for v in vars.iter_mut() {
                     let av = n.funcs[a].add_blockparam(new, Y::default());
@@ -718,7 +718,7 @@ impl XAst for Stmt {
                         })
                         .collect(),
                     prepend: vec![],
-                });
+                }).context("in gtting just")?;
                 for v in vars.iter_mut() {
                     let av = n.funcs[a].add_blockparam(then_block, Y::default());
                     *v = av;
@@ -740,7 +740,7 @@ impl XAst for Stmt {
                     cond.body
                         .ast_compile(&ctx2, c, a, m, n, then_block, ids, &mut true_vars)?;
                 // let new = n.funcs[a].blocks.alloc(Default::default());
-                n.funcs[a].blocks[true_block].term = t(vars);
+                n.funcs[a].blocks[true_block].term = t(vars).context("in gtting ret")?;
                 // n.funcs[a].blocks[false_block].term = T::just(BlockTarget {
                 //     block: new,
                 //     args: false_vars
@@ -793,7 +793,7 @@ impl XAst for Stmt {
                         },
                     )
                 };
-                n.funcs[a].blocks[k].term = t(vars);
+                n.funcs[a].blocks[k].term = t(vars).context("in gtting ret")?;
                 for v in vars.iter_mut() {
                     let av = n.funcs[a].add_blockparam(then_block, Y::default());
                     *v = av;
@@ -815,7 +815,7 @@ impl XAst for Stmt {
                     cond.body
                         .ast_compile(&ctx2, c, a, m, n, then_block, ids, &mut true_vars)?;
                 // let new = n.funcs[a].blocks.alloc(Default::default());
-                n.funcs[a].blocks[true_block].term = t(vars);
+                n.funcs[a].blocks[true_block].term = t(vars).context("in gtting ret")?;
                 // n.funcs[a].blocks[false_block].term = T::just(BlockTarget {
                 //     block: new,
                 //     args: false_vars
@@ -894,7 +894,7 @@ impl XAst for Expr {
                 let (arg, k) = u.arg.ast_compile(ctx, c, a, m, n, k, ids, vars)?;
                 // let (right, k) = bin.right.ast_compile(ctx, c, a, m, n, k, ids, vars)?;
                 let v = n.funcs[a].opts.alloc(Value::Operator(
-                    O::unary(&u.op),
+                    O::unary(&u.op).context("in getting unary")?,
                     vec![Use {
                         value: arg,
                         select: S::default(),
@@ -910,7 +910,7 @@ impl XAst for Expr {
                 let (left, k) = bin.left.ast_compile(ctx, c, a, m, n, k, ids, vars)?;
                 let (right, k) = bin.right.ast_compile(ctx, c, a, m, n, k, ids, vars)?;
                 let v = n.funcs[a].opts.alloc(Value::Operator(
-                    O::bin(&bin.op),
+                    O::bin(&bin.op).context("in getting binary")?,
                     vec![
                         Use {
                             value: left,
@@ -958,7 +958,7 @@ impl XAst for Expr {
                         args: vec![],
                         prepend: vec![],
                     },
-                );
+                ).context("in gtting if")?;
                 let mut true_vars = vars.to_owned();
                 let mut false_vars = vars.to_owned();
                 let (x, true_block) =
@@ -979,7 +979,7 @@ impl XAst for Expr {
                         })
                         .collect(),
                     prepend: vec![],
-                });
+                }).context("in gtting just")?;
                 n.funcs[a].blocks[false_block].term = T::just(BlockTarget {
                     block: new,
                     args: vec![y]
@@ -991,7 +991,7 @@ impl XAst for Expr {
                         })
                         .collect(),
                     prepend: vec![],
-                });
+                }).context("in gtting just")?;
                 let av = n.funcs[a].add_blockparam(new, Y::default());
                 for v in vars.iter_mut() {
                     let av = n.funcs[a].add_blockparam(new, Y::default());
@@ -1093,7 +1093,7 @@ impl XAst for Expr {
                             k = k2;
                         }
                         let v = n.funcs[a].opts.alloc(rat_ir::Value::Operator(
-                            O::null(),
+                            O::null().context("in getting null")?,
                             vec![],
                             Default::default(),
                             PhantomData,
@@ -1102,7 +1102,7 @@ impl XAst for Expr {
                         n.funcs[a].blocks[k].term = (ctx2.ret)(Use {
                             value: v,
                             select: S::default(),
-                        });
+                        }).context("in gtting ret")?;
                         let v = n.funcs[a].add_blockparam(k, Y::default());
                         Ok((v, new))
                     }
@@ -1112,7 +1112,7 @@ impl XAst for Expr {
             Expr::New(_) => todo!(),
             Expr::Seq(s) => {
                 let mut v = n.funcs[a].opts.alloc(rat_ir::Value::Operator(
-                    O::null(),
+                    O::null().context("in getting null")?,
                     vec![],
                     Default::default(),
                     PhantomData,
@@ -1128,10 +1128,10 @@ impl XAst for Expr {
             Expr::Ident(i) => Ok((vars[*ids.get(&i.sym).context("in getting a variable")?], k)),
             Expr::Lit(l) => {
                 let o = match l {
-                    swc_core::ecma::ast::Lit::Str(s) => O::str(s.value.clone()),
+                    swc_core::ecma::ast::Lit::Str(s) => O::str(s.value.clone()).context("in getting str")?,
                     swc_core::ecma::ast::Lit::Bool(_) => todo!(),
                     swc_core::ecma::ast::Lit::Null(_) => todo!(),
-                    swc_core::ecma::ast::Lit::Num(n) => O::num(n.value),
+                    swc_core::ecma::ast::Lit::Num(n) => O::num(n.value).context("in getting num")?,
                     swc_core::ecma::ast::Lit::BigInt(_) => todo!(),
                     swc_core::ecma::ast::Lit::Regex(_) => todo!(),
                     swc_core::ecma::ast::Lit::JSXText(_) => todo!(),

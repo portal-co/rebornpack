@@ -7,10 +7,40 @@ use rat_debug::Span;
 use crate::{
     build_fn,
     transform::{ctx::NormalTermIn, NormalTerm},
-    Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Builder, SaneTerminator, Value,
+    BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Builder, SaneTerminator, Value,
 };
 
 use super::Tracer;
+
+pub struct DoCopy {}
+
+// impl<O: Clone,Y: crate::util::Extract<Y2>,O2: crate::util::Push<O>,T2,Y2,S2: Default> SimpleOp<O,Y,O2,T2,Y2,S2> for DoCopy{
+//     fn build(
+//         &mut self,
+//         o: &O,
+//         y: &Y,
+//         args: &[Id<Value<O2, T2, Y2, S2>>],
+//         span: Option<Span>,
+//     ) -> impl Builder<O2, T2, Y2, S2, Result = Id<Value<O2, T2, Y2, S2>>> {
+//         crate::build_fn(move|new,k|{
+//             let v = new.opts.alloc(Value::Operator(
+//                 O2::push(o.clone()).map_right(|_|()).unwrap_left(),
+//                 args.iter()
+//                     .map(|a| crate::Use {
+//                         value: *a,
+//                         select: S2::default(),
+//                     })
+//                     .collect(),
+//                 y.extract(),
+//                 ::std::marker::PhantomData,
+//             ));
+//             new.blocks[k].insts.push(v);
+//             new.spans[v] = span;
+//             Ok((v,k))
+//         })
+//     }
+// }
+
 pub trait SimpleOp<O, Y, O2, T2, Y2, S2> {
     fn build(
         &mut self,
@@ -26,16 +56,25 @@ impl<
         T2,
         Y2,
         S2,
-        A: SimpleOp<
+        // A: SimpleOp<
+        //         B::O<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
+        //         B::Y<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
+        //         O2,
+        //         T2,
+        //         Y2,
+        //         S2,
+        //     > + Sized
+        //     + 'static,
+        G: Gm<
+            First: SimpleOp<
                 B::O<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
                 B::Y<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
                 O2,
                 T2,
                 Y2,
                 S2,
-            > + Sized
-            + 'static,
-        G: Gm<First = A>,
+            > + Sized,
+        >,
     > SimpleOp<BoundOp<B>, BoundType<B>, O2, T2, Y2, S2> for G
 {
     fn build(
@@ -53,10 +92,12 @@ pub trait Gm {
     type Second;
     fn first<'a>(&'a mut self) -> &'a mut Self::First
     where
-        Self::First: 'a;
+        Self::First: 'a,
+        Self: 'a;
     fn second<'a>(&'a mut self) -> &'a mut Self::Second
     where
-        Self::Second: 'a;
+        Self::Second: 'a,
+        Self: 'a;
 }
 macro_rules! gm_impl {
     (type $ty:ident <$($param:tt),*>;) => {
@@ -94,6 +135,9 @@ type _Unit = ();
 gm_impl!(
     type _Unit;
 );
+gm_impl!(
+    type DoCopy;
+);
 mod _test {
     use super::*;
     use crate::{build_fn, safe, transform::NormalTerm, Builder, SaneTerminator, Value};
@@ -122,9 +166,9 @@ impl<
         T2,
         Y2,
         S2,
-        A: SimpleOp<O, Y, O2, T2, Y2, S2> + 'static,
-        B: SimpleOp<Ox, Y, O2, T2, Y2, S2> + 'static,
-        T: Gm<First = A, Second = B>,
+        // A: SimpleOp<O, Y, O2, T2, Y2, S2>,
+        // B: SimpleOp<Ox, Y, O2, T2, Y2, S2> + 'static,
+        T: Gm<First: SimpleOp<O, Y, O2, T2, Y2, S2>, Second: SimpleOp<Ox, Y, O2, T2, Y2, S2>>,
     > SimpleOp<Either<O, Ox>, Y, O2, T2, Y2, S2> for T
 {
     fn build(
@@ -266,16 +310,16 @@ impl<
         T2,
         Y2,
         S2,
-        A: SimpleSelect<
+        G: Gm<
+            First: SimpleSelect<
                 B::Y<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
                 B::S<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
                 O2,
                 T2,
                 Y2,
                 S2,
-            > + Sized
-            + 'static,
-        G: Gm<First = A>,
+            > + Sized,
+        >,
     > SimpleSelect<BoundType<B>, BoundSelect<B>, O2, T2, Y2, S2> for G
 {
     fn build_select<'a>(
@@ -301,15 +345,15 @@ impl<
         T2,
         Y2,
         S2,
-        A: SimpleParam<
+        G: Gm<
+            First: SimpleParam<
                 B::Y<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
                 O2,
                 T2,
                 Y2,
                 S2,
-            > + Sized
-            + 'static,
-        G: Gm<First = A>,
+            > + Sized,
+        >,
     > SimpleParam<BoundType<B>, O2, T2, Y2, S2> for G
 {
     fn param(
@@ -349,6 +393,11 @@ impl<
 }
 pub struct DoSimple<X> {
     pub wrapped: Box<X>,
+}
+impl<Y, X: AsMut<Y>> AsMut<Y> for DoSimple<X> {
+    fn as_mut(&mut self) -> &mut Y {
+        return self.wrapped.as_mut().as_mut();
+    }
 }
 impl<
         O,
@@ -411,7 +460,7 @@ impl<
         mut go: impl FnMut(
             &mut super::State<O, T, Y, S, O2, T2, Y2, S2, Self>,
             &mut crate::Func<O2, T2, Y2, S2>,
-            id_arena::Id<crate::Block<O, T, Y, S>>,
+            &BlockTarget<O, T, Y, S>,
             Self::Instance,
         ) -> anyhow::Result<id_arena::Id<crate::Block<O2, T2, Y2, S2>>>,
         valmap: &std::collections::BTreeMap<
@@ -420,12 +469,12 @@ impl<
         >,
         new: &mut crate::Func<O2, T2, Y2, S2>,
         k: id_arena::Id<crate::Block<O2, T2, Y2, S2>>,
-        old: &crate::Func<O, T, Y, S>,
+        // old: &crate::Func<O, T, Y, S>,
         span: Option<Span>,
     ) -> anyhow::Result<()> {
         let m = t
             .t2s()
-            .map(|a| Ok((a.block, go(state, new, a.block, ())?)))
+            .map(|a| Ok((a.block, go(state, new, a, ())?)))
             .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
         let n = t.norm(
             state.tracer.wrapped.as_mut(),

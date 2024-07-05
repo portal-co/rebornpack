@@ -5,10 +5,54 @@ use either::Either;
 use id_arena::Id;
 use lexpr::cons::ListIter;
 use rat_ast::import::{Get, Set, SetDirect, VarBuilder};
-use rat_ir::{util::Bt, Block, BlockTarget, Use, Value};
+use rat_ir::{
+    util::{Bt, Push},
+    Block, BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Unit, Use, Value,
+};
 
 pub trait LispOp<O, T, Y, S>: Clone {
     fn lisp(x: &lexpr::Value) -> anyhow::Result<Self>;
+}
+impl<B: Bound> LispOp<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>> for BoundOp<B>
+where
+    B::O<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>:
+        LispOp<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
+{
+    fn lisp(x: &lexpr::Value) -> anyhow::Result<Self> {
+        Ok(BoundOp(B::O::<
+            BoundOp<B>,
+            BoundTerm<B>,
+            BoundType<B>,
+            BoundSelect<B>,
+        >::lisp(x)?))
+    }
+}
+impl<B: Bound> LispOp<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>> for BoundType<B>
+where
+    B::Y<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>:
+        LispOp<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
+{
+    fn lisp(x: &lexpr::Value) -> anyhow::Result<Self> {
+        Ok(BoundType(B::Y::<
+            BoundOp<B>,
+            BoundTerm<B>,
+            BoundType<B>,
+            BoundSelect<B>,
+        >::lisp(x)?))
+    }
+}
+impl<O, T, Y, S, A: LispOp<O, T, Y, S>, B: LispOp<O, T, Y, S>> LispOp<O, T, Y, S> for Either<A, B> {
+    fn lisp(x: &lexpr::Value) -> anyhow::Result<Self> {
+        let ae = match A::lisp(x) {
+            Ok(a) => return Ok(Either::Left(a)),
+            Err(e) => e,
+        };
+        let be = match B::lisp(x) {
+            Ok(a) => return Ok(Either::Right(a)),
+            Err(e) => e,
+        };
+        return Err(anyhow::anyhow!("{ae}; {be}"));
+    }
 }
 pub struct Loop<O, T, Y, S> {
     pub r#break: Id<Block<O, T, Y, S>>,
@@ -28,21 +72,95 @@ pub trait LispSeed<'a, O, T, Y, S, U> {
         go: impl TermTargetFn<'a, O, T, Y, S>,
     ) -> anyhow::Result<impl VarBuilder<O, T, Y, S, Id<Value<O, T, Y, S>>, Result = U> + 'a>;
 }
-impl<'a, O, T, Y, S, U, A: LispSeed<'a, O, T, Y, S, U>, B: LispSeed<'a, O, T, Y, S, U>>
-    LispSeed<'a, O, T, Y, S, U> for Either<A, B>
+impl<'a, O, T, Y, S, U, V, A: LispSeed<'a, O, T, Y, S, U>, B: LispSeed<'a, O, T, Y, S, V>>
+    LispSeed<'a, O, T, Y, S, Either<U, V>> for Either<A, B>
 {
     fn bind(
         &self,
         go: impl TermTargetFn<'a, O, T, Y, S>,
-    ) -> anyhow::Result<impl VarBuilder<O, T, Y, S, Id<Value<O, T, Y, S>>, Result = U> + 'a> {
+    ) -> anyhow::Result<
+        impl VarBuilder<O, T, Y, S, Id<Value<O, T, Y, S>>, Result = Either<U, V>> + 'a,
+    > {
         match self {
-            Either::Left(a) => a.bind(go).map(Either::Left),
-            Either::Right(b) => b.bind(go).map(Either::Right),
+            Either::Left(a) => a
+                .bind(go)
+                .map(|a| Box::new(a).then(|x| Unit(Either::Left(x))))
+                .map(Either::Left),
+            Either::Right(b) => b
+                .bind(go)
+                .map(|a| Box::new(a).then(|x| Unit(Either::Right(x))))
+                .map(Either::Right),
         }
     }
 }
-pub trait LispTerm<O, T, Y, S>: Bt<O, T, Y, S> + Sized {
+pub struct _Bind<X>(pub X);
+impl<
+        'a,
+        B: Bound,
+        S: LispSeed<
+            'a,
+            BoundOp<B>,
+            BoundTerm<B>,
+            BoundType<B>,
+            BoundSelect<B>,
+            B::T<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
+        >,
+    > LispSeed<'a, BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>, BoundTerm<B>>
+    for _Bind<S>
+{
+    fn bind(
+        &self,
+        go: impl TermTargetFn<'a, BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
+    ) -> anyhow::Result<
+        impl VarBuilder<
+                BoundOp<B>,
+                BoundTerm<B>,
+                BoundType<B>,
+                BoundSelect<B>,
+                Id<Value<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>>,
+                Result = BoundTerm<B>,
+            > + 'a,
+    > {
+        self.0
+            .bind(go)
+            .map(|a| Box::new(a).then(|x| Unit(BoundTerm(x))))
+    }
+}
+pub trait LispTerm<O, T, Y, S>: Push<BlockTarget<O, T, Y, S>> + Sized {
     fn parse<'a>(x: &'a lexpr::Value) -> anyhow::Result<impl LispSeed<'a, O, T, Y, S, Self> + 'a>;
+}
+impl<O, T, Y, S, A: LispTerm<O, T, Y, S>, B: LispTerm<O, T, Y, S>> LispTerm<O, T, Y, S>
+    for Either<A, B>
+{
+    fn parse<'a>(x: &'a lexpr::Value) -> anyhow::Result<impl LispSeed<'a, O, T, Y, S, Self> + 'a> {
+        let ae = match A::parse(x) {
+            Ok(a) => return Ok(Either::Left(a)),
+            Err(e) => e,
+        };
+        let be = match B::parse(x) {
+            Ok(a) => return Ok(Either::Right(a)),
+            Err(e) => e,
+        };
+        return Err(anyhow::anyhow!("{ae}; {be}"));
+    }
+}
+impl<B: Bound> LispTerm<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>> for BoundTerm<B>
+where
+    B::T<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>:
+        LispTerm<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
+{
+    fn parse<'a>(
+        x: &'a lexpr::Value,
+    ) -> anyhow::Result<
+        impl LispSeed<'a, BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>, Self> + 'a,
+    > {
+        Ok(_Bind(B::T::<
+            BoundOp<B>,
+            BoundTerm<B>,
+            BoundType<B>,
+            BoundSelect<B>,
+        >::parse(x)?))
+    }
 }
 pub fn lex<
     'a,

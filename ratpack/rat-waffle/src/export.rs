@@ -18,7 +18,7 @@ use waffle::{
     SignatureData, Value, ValueDef,
 };
 
-use crate::{import::WaffleTerm, OpWrapper};
+use crate::{detect::add_op, import::WaffleTerm, OpWrapper};
 pub trait WaffleExtra<T>: Clone {
     fn waffle(&self, m: &mut Module) -> T;
 }
@@ -208,29 +208,34 @@ pub fn results_ref_2(f: &mut FunctionBody, c: Value) -> Vec<Value> {
 
     return v;
 }
-
 impl<O, T, Y, S, C> ExportOp<O, T, Y, S, C> for waffle::Operator {
     fn export(
         &self,
         ctx: &mut C,
         m: &mut Module,
         target: &mut FunctionBody,
-        wb: waffle::Block,
-        args: Vec<waffle::Value>,
+        mut wb: waffle::Block,
+        mut args: Vec<waffle::Value>,
         types: &[waffle::Type],
     ) -> anyhow::Result<(Vec<waffle::Value>, waffle::Block)> {
-        static LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+        static LOCK: Lazy<Mutex<u64>> = Lazy::new(|| Mutex::new(rand::random()));
+        if let Ok(uid) = LOCK.try_lock() {
+            if m.funcs.len() > 32 {
+                
+            }
+        }
+        // LOCK.fetch_xor(true, std::sync::atomic::Ordering::SeqCst);
+        // let args = target.arg_pool.from_iter(args.iter().cloned());
+        // let tys = target.type_pool.from_iter(types.iter().cloned());
+        // let v = target
+        //     .values
+        //     .push(ValueDef::Operator(self.clone(), args, tys));
+        let v = add_op(target, &args, &types, self.clone());
+        target.append_to_block(wb, v);
+        let r = results_ref_2(target, v);
         if let Ok(_) = LOCK.try_lock() {
             if m.funcs.len() > 32 {}
         }
-        // LOCK.fetch_xor(true, std::sync::atomic::Ordering::SeqCst);
-        let args = target.arg_pool.from_iter(args.iter().cloned());
-        let tys = target.type_pool.from_iter(types.iter().cloned());
-        let v = target
-            .values
-            .push(ValueDef::Operator(self.clone(), args, tys));
-        target.append_to_block(wb, v);
-        let r = results_ref_2(target, v);
         return Ok((r, wb));
     }
 }
@@ -557,7 +562,16 @@ impl<O, T, Y, S: WaffleExtra<Option<usize>>, C, F: Wf<C>> ExportTerm<O, T, Y, S,
                         y
                     })
                     .collect();
-                let sig = new_sig(m, SignatureData { params: v[1..].iter().flat_map(|x|target.values[*x].ty(&target.type_pool)).collect(), returns: target.rets.clone() });
+                let sig = new_sig(
+                    m,
+                    SignatureData {
+                        params: v[1..]
+                            .iter()
+                            .flat_map(|x| target.values[*x].ty(&target.type_pool))
+                            .collect(),
+                        returns: target.rets.clone(),
+                    },
+                );
                 target.set_terminator(
                     k,
                     waffle::Terminator::ReturnCallIndirect {
@@ -578,7 +592,16 @@ impl<O, T, Y, S: WaffleExtra<Option<usize>>, C, F: Wf<C>> ExportTerm<O, T, Y, S,
                         y
                     })
                     .collect();
-                let sig = new_sig(m, SignatureData { params: v[1..].iter().flat_map(|x|target.values[*x].ty(&target.type_pool)).collect(), returns: target.rets.clone() });
+                let sig = new_sig(
+                    m,
+                    SignatureData {
+                        params: v[1..]
+                            .iter()
+                            .flat_map(|x| target.values[*x].ty(&target.type_pool))
+                            .collect(),
+                        returns: target.rets.clone(),
+                    },
+                );
                 target.set_terminator(k, waffle::Terminator::ReturnCallRef { sig, args: v });
             }
         }

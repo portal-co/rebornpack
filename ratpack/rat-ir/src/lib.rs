@@ -9,6 +9,7 @@ use std::{
 use either::Either;
 use id_arena::{Arena, Id};
 use rat_debug::Span;
+use serde::{Deserialize, Serialize};
 use util::PerID;
 pub mod bi;
 pub mod cfg;
@@ -137,11 +138,13 @@ impl<O, T, Y, S, A> Builder<O, T, Y, S> for Unit<A> {
         Ok((self.0, root))
     }
 }
-
+#[derive(Serialize, Deserialize)]
+#[serde(default)]
 pub struct Func<O, T, Y, S> {
     pub opts: Arena<Value<O, T, Y, S>>,
     pub blocks: Arena<Block<O, T, Y, S>>,
     pub entry: Id<Block<O, T, Y, S>>,
+    #[serde(skip)]
     pub pred_cache: BTreeMap<Id<Block<O, T, Y, S>>, BTreeSet<Id<Block<O, T, Y, S>>>>,
     pub spans: PerID<Value<O, T, Y, S>, Option<Span>>,
 }
@@ -183,6 +186,7 @@ impl<O: Clone, T: Clone, Y: Clone, S: Clone> Clone for Func<O, T, Y, S> {
         }
     }
 }
+#[derive(Serialize, Deserialize)]
 pub struct Use<O, T, Y, S> {
     pub value: Id<Value<O, T, Y, S>>,
     pub select: S,
@@ -224,6 +228,7 @@ impl<O, T, Y, S> Func<O, T, Y, S> {
         self.pred_cache = BTreeMap::new();
     }
 }
+#[derive(Serialize, Deserialize)]
 pub enum Value<O, T, Y, S> {
     Operator(O, Vec<Use<O, T, Y, S>>, Y, PhantomData<T>),
     BlockParam(usize, Id<Block<O, T, Y, S>>, Y),
@@ -251,6 +256,7 @@ impl<O, T, Y, S> Value<O, T, Y, S> {
         }
     }
 }
+#[derive(Serialize, Deserialize)]
 pub struct Block<O, T, Y, S> {
     pub insts: Vec<Id<Value<O, T, Y, S>>>,
     pub term: T,
@@ -277,6 +283,7 @@ impl<O, T: Default, Y, S> Default for Block<O, T, Y, S> {
         }
     }
 }
+#[derive(Serialize, Deserialize)]
 pub struct BlockTarget<O, T, Y, S> {
     pub block: Id<Block<O, T, Y, S>>,
     pub args: Vec<Use<O, T, Y, S>>,
@@ -556,13 +563,33 @@ macro_rules! bound_impls {
         }
     };
 }
-#[derive(derive_more::Deref, derive_more::DerefMut)]
+#[derive(derive_more::Deref, derive_more::DerefMut, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+#[serde(bound(
+    serialize = "B::O<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: Serialize",
+    deserialize = "B::O<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: Deserialize<'de>"
+))]
 pub struct BoundOp<B: Bound>(pub B::O<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>);
-#[derive(derive_more::Deref, derive_more::DerefMut)]
+#[derive(derive_more::Deref, derive_more::DerefMut, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+#[serde(bound(
+    serialize = "B::T<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: Serialize",
+    deserialize = "B::T<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: Deserialize<'de>"
+))]
 pub struct BoundTerm<B: Bound>(pub B::T<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>);
-#[derive(derive_more::Deref, derive_more::DerefMut)]
+#[derive(derive_more::Deref, derive_more::DerefMut, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+#[serde(bound(
+    serialize = "B::Y<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: Serialize",
+    deserialize = "B::Y<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: Deserialize<'de>"
+))]
 pub struct BoundType<B: Bound>(pub B::Y<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>);
-#[derive(derive_more::Deref, derive_more::DerefMut)]
+#[derive(derive_more::Deref, derive_more::DerefMut, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+#[serde(bound(
+    serialize = "B::S<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: Serialize",
+    deserialize = "B::S<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: Deserialize<'de>"
+))]
 pub struct BoundSelect<B: Bound>(pub B::S<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>);
 bound_impls!(BoundOp, O);
 bound_impls!(BoundTerm, T);

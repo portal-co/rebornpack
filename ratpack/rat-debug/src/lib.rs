@@ -1,6 +1,8 @@
+use serde::Deserialize;
+use serde::Serialize;
 use sha3::Sha3_256;
 use sha3::Digest;
-#[derive(Clone, Debug, PartialEq, PartialOrd, Ord, Eq, Hash)]
+#[derive(Clone, Debug, PartialEq, PartialOrd, Ord, Eq, Hash, Serialize, Deserialize)]
 pub struct Span {
     pub file: String,
     pub offset: usize,

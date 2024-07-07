@@ -1,0 +1,895 @@
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    env::vars,
+    iter::once,
+};
+pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
+}
+pub fn mod_hash(m: &Module, fi: Func) -> u64 {
+    let h = calculate_hash(
+        &m.funcs[fi]
+            .body()
+            .map(|a| a.display("", Some(m)))
+            .map(|a| a.to_string()),
+    );
+    return h;
+}
+use anyhow::Context;
+
+use more_waffle::{add_op, new_sig, passes::mem_fusing::get_exports};
+use waffle::Global;
+use waffle::{
+    entity::EntityRef, wasmparser::ValType, Block, BlockTarget, ExportKind, Func, FuncDecl,
+    FunctionBody, Memory, MemoryArg, Module, Operator, SignatureData, Table, Terminator, Type,
+    Value,
+};
+
+use crate::backend::{x64::os::OS_WASM, Ast, Mod};
+pub fn hb(f: &mut FunctionBody, k: Block, v: Value) -> (Value, Value) {
+    let ko = add_op(f, &[], &[Type::I32], Operator::I32Const { value: 32 });
+    f.append_to_block(k, ko);
+    let a = add_op(f, &[v, ko], &[Type::I64], Operator::I64ShrU);
+    f.append_to_block(k, a);
+    let b = add_op(f, &[v], &[Type::I32], Operator::I32WrapI64);
+    f.append_to_block(k, b);
+    let a = add_op(f, &[a], &[Type::I32], Operator::I32WrapI64);
+    f.append_to_block(k, a);
+    return (a, b);
+}
+pub fn bb(f: &mut FunctionBody, k: Block, a: Value, b: Value) -> Value {
+    let b = add_op(f, &[b], &[Type::I64], Operator::I64ExtendI32U);
+    f.append_to_block(k, b);
+    let a = add_op(f, &[a], &[Type::I64], Operator::I64ExtendI32U);
+    f.append_to_block(k, a);
+    let ko = add_op(f, &[], &[Type::I32], Operator::I32Const { value: 32 });
+    f.append_to_block(k, ko);
+    let a = add_op(f, &[a, ko], &[Type::I64], Operator::I64Shl);
+    f.append_to_block(k, a);
+    let a = add_op(f, &[a, b], &[Type::I64], Operator::I64Add);
+    f.append_to_block(k, a);
+    return a;
+}
+pub fn mb(
+    m: &mut Module,
+    f: &mut FunctionBody,
+    k: Block,
+    v: Value,
+    mut go: impl FnMut(&mut FunctionBody, &mut Module, Memory, Value, Block) -> anyhow::Result<Value>,
+) -> anyhow::Result<(Value, Block)> {
+    let nxt = f.add_block();
+    let (mi, n) = hb(f, k, v);
+    let mut ks = vec![];
+    for mem in m.memories.iter() {
+        let nb = f.add_block();
+        let v = go(f, m, mem, n, nb)?;
+        ks.push(BlockTarget {
+            block: nb,
+            args: vec![],
+        });
+        f.set_terminator(
+            nb,
+            waffle::Terminator::Br {
+                target: BlockTarget {
+                    block: nxt,
+                    args: vec![v],
+                },
+            },
+        );
+    }
+    let u = f.add_block();
+    f.set_terminator(u, Terminator::Unreachable);
+    f.set_terminator(
+        k,
+        Terminator::Select {
+            value: mi,
+            targets: ks,
+            default: BlockTarget {
+                block: u,
+                args: vec![],
+            },
+        },
+    );
+
+    return Ok((f.add_blockparam(nxt, Type::I64), nxt));
+}
+#[derive(Clone, Copy)]
+pub struct Ctx {
+    tab: Table,
+    alloca_mem: Memory,
+    gsp: Global,
+}
+pub const SSN_MALLOC: u64 = 0x10001;
+pub const SSN_FREE: u64 = 0x10002;
+pub fn lp(
+    a: &[Ast],
+    f: &mut FunctionBody,
+    m: &mut Module,
+    tab: Ctx,
+    mut k: Block,
+    vars: &mut BTreeMap<String, Value>,
+    funs: &BTreeMap<String, Func>,
+) -> anyhow::Result<(Value, Block)> {
+    let mut p = vec![];
+    for a in a.iter() {
+        let (b, l) = a.wasm(f, m, tab, k, vars, funs)?;
+        k = l;
+        p.push(b);
+    }
+    let o = add_op(
+        f,
+        &[],
+        &[Type::I32],
+        Operator::GlobalGet {
+            global_index: tab.gsp,
+        },
+    );
+    f.append_to_block(k, o);
+    let o2 = add_op(
+        f,
+        &[*vars.get("$sp").unwrap()],
+        &[],
+        Operator::GlobalSet {
+            global_index: tab.gsp,
+        },
+    );
+    f.append_to_block(k, o2);
+    let ret = f.add_block();
+    let rv = f.add_blockparam(ret, Type::I64);
+    let o = add_op(
+        f,
+        &[o],
+        &[],
+        Operator::GlobalSet {
+            global_index: tab.gsp,
+        },
+    );
+    f.append_to_block(ret, o);
+    let x = get_exports(m);
+    let malloc = x
+        .get("malloc")
+        .or_else(|| x.get("__wbindgen_malloc"))
+        .cloned()
+        .and_then(|a| match a {
+            ExportKind::Func(a) => Some(a),
+            _ => None,
+        });
+    let free = x
+        .get("free")
+        .or_else(|| x.get("__wbindgen_free"))
+        .cloned()
+        .and_then(|a| match a {
+            ExportKind::Func(a) => Some(a),
+            _ => None,
+        });
+    let mem = x.get("memory").cloned().and_then(|a| match a {
+        ExportKind::Memory(a) => Some(a),
+        _ => None,
+    });
+    let mut cases = BTreeMap::new();
+    if p.len() >= 2 {
+        if let Some(mem) = mem {
+            if let Some(m) = malloc {
+                let l = f.add_block();
+                let a = p[1];
+                let (_, a) = hb(f, l, a);
+                let a = add_op(f, &[a], &[Type::I32], Operator::Call { function_index: m });
+                f.append_to_block(l, a);
+                let a = add_op(f, &[a], &[Type::I64], Operator::I64ExtendI32U);
+                let n = add_op(
+                    f,
+                    &[],
+                    &[Type::I64],
+                    Operator::I64Const {
+                        value: (mem.index() as u64) << 32,
+                    },
+                );
+                f.append_to_block(l, n);
+                let n = add_op(f, &[a, n], &[Type::I64], Operator::I64Add);
+                f.append_to_block(l, n);
+                f.set_terminator(
+                    l,
+                    Terminator::Br {
+                        target: BlockTarget {
+                            block: ret,
+                            args: vec![n],
+                        },
+                    },
+                );
+                cases.insert(SSN_MALLOC, l);
+            }
+            if let Some(fr) = free {
+                let l = f.add_block();
+                let a = p[1];
+                let (a, b) = hb(f, l, a);
+                let v = add_op(
+                    f,
+                    &(&[a, b]
+                        .iter()
+                        .zip(m.signatures[m.funcs[fr].sig()].params.iter())
+                        .map(|a| *a.0)
+                        .collect::<Vec<_>>()),
+                    &[],
+                    Operator::Call { function_index: fr },
+                );
+                f.append_to_block(l, v);
+                let n = add_op(f, &[], &[Type::I64], Operator::I64Const { value: 0 });
+                f.append_to_block(l, n);
+                f.set_terminator(
+                    l,
+                    Terminator::Br {
+                        target: BlockTarget {
+                            block: ret,
+                            args: vec![n],
+                        },
+                    },
+                );
+                cases.insert(SSN_FREE, l);
+            }
+        }
+    }
+    for fi in m.funcs.iter() {
+        let h = mod_hash(m, fi);
+        let l = f.add_block();
+        let oi32 = add_op(f, &[], &[Type::I32], Operator::I32Const { value: 0 });
+        let mut raw = p[1..]
+            .iter()
+            .flat_map(|a| {
+                let (a, b) = hb(f, l, *a);
+                return vec![a, b];
+            })
+            .collect::<Vec<_>>()
+            .into_iter();
+        let mut params = vec![];
+        for p in m.signatures[m.funcs[fi].sig()].params.iter() {
+            match p {
+                Type::I32 => params.push(raw.next().unwrap_or(oi32)),
+                Type::I64 => {
+                    let a = raw.next().unwrap_or(oi32);
+                    let b = raw.next().unwrap_or(oi32);
+                    params.push(bb(f, l, a, b));
+                }
+                Type::F32 => {
+                    let n = raw.next().unwrap_or(oi32);
+                    let n = add_op(f, &[n], &[Type::F32], Operator::F32ReinterpretI32);
+                    f.append_to_block(l, n);
+                    params.push(n);
+                }
+                Type::F64 => {
+                    let a = raw.next().unwrap_or(oi32);
+                    let b = raw.next().unwrap_or(oi32);
+                    let n = bb(f, l, a, b);
+                    let n = add_op(f, &[n], &[Type::F64], Operator::F64ReinterpretI64);
+                    f.append_to_block(l, n);
+                    params.push(n);
+                }
+                Type::V128 => todo!(),
+                Type::FuncRef => todo!(),
+                Type::TypedFuncRef(_, _) => todo!(),
+            }
+        }
+        let rt = m.signatures[m.funcs[fi].sig()].returns.clone();
+        let co = add_op(f, &params, &rt, Operator::Call { function_index: fi });
+        match rt.len() {
+            0 => {
+                let v = bb(f, l, oi32, oi32);
+                f.set_terminator(
+                    l,
+                    Terminator::Br {
+                        target: BlockTarget {
+                            block: ret,
+                            args: vec![v],
+                        },
+                    },
+                );
+            }
+            1 => match rt[0] {
+                Type::I32 => {
+                    let v = bb(f, l, oi32, co);
+                    f.set_terminator(
+                        l,
+                        Terminator::Br {
+                            target: BlockTarget {
+                                block: ret,
+                                args: vec![v],
+                            },
+                        },
+                    );
+                }
+                Type::I64 => {
+                    let v = co;
+                    f.set_terminator(
+                        l,
+                        Terminator::Br {
+                            target: BlockTarget {
+                                block: ret,
+                                args: vec![v],
+                            },
+                        },
+                    );
+                }
+                Type::F32 => {
+                    let co = add_op(f, &[co], &[Type::I32], Operator::I32ReinterpretF32);
+                    f.append_to_block(l, co);
+                    let v = bb(f, l, oi32, co);
+                    f.set_terminator(
+                        l,
+                        Terminator::Br {
+                            target: BlockTarget {
+                                block: ret,
+                                args: vec![v],
+                            },
+                        },
+                    );
+                }
+                Type::F64 => {
+                    let co = add_op(f, &[co], &[Type::I64], Operator::I64ReinterpretF64);
+                    f.append_to_block(l, co);
+                    let v = co;
+                    f.set_terminator(
+                        l,
+                        Terminator::Br {
+                            target: BlockTarget {
+                                block: ret,
+                                args: vec![v],
+                            },
+                        },
+                    );
+                }
+                Type::V128 => todo!(),
+                Type::FuncRef => todo!(),
+                Type::TypedFuncRef(_, _) => todo!(),
+            },
+            _ => {
+                let mut r = raw.next().unwrap_or(oi32);
+                let o = r;
+                for (i, rt) in rt.iter().enumerate() {
+                    let p = f.add_value(waffle::ValueDef::PickOutput(co, i as u32, *rt));
+                    f.append_to_block(l, p);
+                    let memory = MemoryArg {
+                        align: 0,
+                        offset: 0,
+                        memory: tab.alloca_mem,
+                    };
+                    let o = add_op(
+                        f,
+                        &[r, p],
+                        &[],
+                        match rt {
+                            Type::I32 => Operator::I32Store { memory },
+                            Type::I64 => Operator::I64Store { memory },
+                            Type::F32 => Operator::F32Store { memory },
+                            Type::F64 => Operator::F64Store { memory },
+                            Type::V128 => todo!(),
+                            Type::FuncRef => todo!(),
+                            Type::TypedFuncRef(_, _) => todo!(),
+                        },
+                    );
+                    f.append_to_block(l, o);
+                    let i = add_op(
+                        f,
+                        &[],
+                        &[Type::I32],
+                        match rt {
+                            Type::I32 => Operator::I32Const { value: 4 },
+                            Type::I64 => Operator::I32Const { value: 8 },
+                            Type::F32 => Operator::I32Const { value: 4 },
+                            Type::F64 => Operator::I32Const { value: 8 },
+                            Type::V128 => todo!(),
+                            Type::FuncRef => todo!(),
+                            Type::TypedFuncRef(_, _) => todo!(),
+                        },
+                    );
+                    f.append_to_block(l, i);
+                    r = add_op(f, &[r, i], &[Type::I32], Operator::I32Add);
+                    f.append_to_block(l, r);
+                }
+                let v = bb(f, l, o, r);
+                f.set_terminator(
+                    l,
+                    Terminator::Br {
+                        target: BlockTarget {
+                            block: ret,
+                            args: vec![v],
+                        },
+                    },
+                );
+            }
+        }
+        cases.insert(h, l);
+        cases.insert(calculate_hash(&m.funcs[fi].name()), l);
+    }
+    for (i, j) in cases {
+        let o = add_op(f, &[], &[Type::I64], Operator::I64Const { value: i });
+        f.append_to_block(k, o);
+        let o = add_op(f, &[o, p[0]], &[Type::I32], Operator::I64Eq);
+        f.append_to_block(k, o);
+        let l = f.add_block();
+        f.set_terminator(
+            k,
+            Terminator::CondBr {
+                cond: o,
+                if_true: BlockTarget {
+                    block: j,
+                    args: vec![],
+                },
+                if_false: BlockTarget {
+                    block: l,
+                    args: vec![],
+                },
+            },
+        );
+        k = l;
+    }
+    let n = add_op(f, &[], &[Type::I64], Operator::I64Const { value: u64::MAX });
+    f.append_to_block(k, n);
+    f.set_terminator(
+        k,
+        Terminator::Br {
+            target: BlockTarget {
+                block: ret,
+                args: vec![n],
+            },
+        },
+    );
+
+    return Ok((rv, ret));
+}
+impl Mod {
+    pub fn wasm(&self, m: &mut Module, tab: Ctx) -> anyhow::Result<BTreeMap<String, Func>> {
+        let mut ma = BTreeMap::new();
+        for (n, f) in self.funcs.iter() {
+            ma.insert(n.clone(), m.funcs.push(waffle::FuncDecl::None));
+        }
+        for (n, f) in self.funcs.iter() {
+            let mut p = vec![Type::I32];
+            let mut params = 0;
+            f.body.size(&mut params);
+            p.extend((0..=params).map(|a| Type::I64));
+            let s = new_sig(
+                m,
+                SignatureData {
+                    params: p,
+                    returns: vec![Type::I64],
+                },
+            );
+            let mut b = FunctionBody::new(&m, s);
+            let mut v = BTreeMap::new();
+            v.insert("$sp".to_owned(), b.blocks[b.entry].params[0].1);
+            let mut o = add_op(&mut b, &[], &[Type::I64], Operator::I64Const { value: 0 });
+            b.append_to_block(b.entry, o);
+            let mut go = BTreeSet::new();
+            f.body.vars(&mut go);
+            for g in go {
+                v.insert(g, o);
+            }
+            let e = b.entry;
+            let (rv, rb) = f.body.wasm(&mut b, m, tab, e, &mut v, &ma)?;
+            b.set_terminator(rb, Terminator::Return { values: vec![rv] });
+            m.funcs[*ma.get(n).unwrap()] = FuncDecl::Body(s, n.clone(), b);
+        }
+
+        return Ok(ma);
+    }
+    pub fn instrument(&self, m: &mut Module, tab: Ctx) -> anyhow::Result<()>{
+        let ma = self.wasm(m, tab)?;
+        let mb = ma.values().map(|a|*a).collect::<BTreeSet<_>>();
+        fn go(m: &mut Module, b: &mut FunctionBody, ma: &BTreeMap<String,Func>, tab: Ctx) -> anyhow::Result<()>{
+            return Ok(());
+        }
+        let mut bs = BTreeMap::new();
+        for (f,d) in m.funcs.entries(){
+            if let Some(b) = d.body(){
+                if !mb.contains(&f){
+                    bs.insert(f,b.clone());
+                }
+            }
+        }
+        for (k,mut b) in bs.into_iter(){
+            go(m,&mut b,&ma,tab)?;
+            *m.funcs[k].body_mut().unwrap() = b
+        }
+        return Ok(());
+    }
+}
+impl Ast {
+    pub fn wasm(
+        &self,
+        f: &mut FunctionBody,
+        m: &mut Module,
+        tab: Ctx,
+        mut k: Block,
+        vars: &mut BTreeMap<String, Value>,
+        funs: &BTreeMap<String, Func>,
+    ) -> anyhow::Result<(Value, Block)> {
+        match self {
+            Ast::Call(a, b) => {
+                let (a, mut k) = a.wasm(f, m, tab, k, vars, funs)?;
+                let a = add_op(f, &[a], &[Type::I32], Operator::I32WrapI64);
+                f.append_to_block(k, a);
+                let sp = *vars.get("$sp").unwrap();
+                let mut r = vec![sp];
+                for a in b {
+                    let (b, l) = a.wasm(f, m, tab, k, vars, funs)?;
+                    k = l;
+                    r.push(b);
+                }
+                let s = new_sig(
+                    m,
+                    SignatureData {
+                        returns: f.rets.clone(),
+                        params: r
+                            .iter()
+                            .map(|x| f.values[*x].ty(&f.type_pool).unwrap())
+                            .collect(),
+                    },
+                );
+                r = vec![a].into_iter().chain(r.into_iter()).collect();
+                let v = add_op(
+                    f,
+                    &r,
+                    &[Type::I64],
+                    Operator::CallIndirect {
+                        sig_index: s,
+                        table_index: tab.tab,
+                    },
+                );
+                f.append_to_block(k, v);
+                return Ok((v, k));
+            }
+            Ast::Jmp(a, b) => {
+                let (a, mut k) = a.wasm(f, m, tab, k, vars, funs)?;
+                let a = add_op(f, &[a], &[Type::I32], Operator::I32WrapI64);
+                f.append_to_block(k, a);
+                let sp = *vars.get("$sp").unwrap();
+                let mut r = vec![sp];
+                for a in b {
+                    let (b, l) = a.wasm(f, m, tab, k, vars, funs)?;
+                    k = l;
+                    r.push(b);
+                }
+                let s = new_sig(
+                    m,
+                    SignatureData {
+                        returns: f.rets.clone(),
+                        params: r
+                            .iter()
+                            .map(|x| f.values[*x].ty(&f.type_pool).unwrap())
+                            .collect(),
+                    },
+                );
+                r = vec![a].into_iter().chain(r.into_iter()).collect();
+                f.set_terminator(
+                    k,
+                    waffle::Terminator::ReturnCallIndirect {
+                        sig: s,
+                        table: tab.tab,
+                        args: r,
+                    },
+                );
+                let shadow = f.add_block();
+                let shadow_value = add_op(f, &[], &[Type::I64], Operator::Unreachable);
+                f.append_to_block(shadow, shadow_value);
+                return Ok((shadow_value, shadow));
+            }
+            Ast::Sym(s) => {
+                let fs = *funs.get(s).context("in getting symbol")?;
+                m.tables[tab.tab].func_elements =
+                    Some(match m.tables[tab.tab].func_elements.clone() {
+                        None => vec![fs],
+                        Some(mut a) => {
+                            if !a.contains(&fs) {
+                                a.push(fs)
+                            };
+                            a
+                        }
+                    });
+                let i = m.tables[tab.tab]
+                    .func_elements
+                    .as_ref()
+                    .unwrap()
+                    .iter()
+                    .position(|a| *a == fs)
+                    .unwrap();
+                let i = i as u64;
+                let v = add_op(f, &[], &[Type::I64], Operator::I64Const { value: i });
+                f.append_to_block(k, v);
+                return Ok((v, k));
+            }
+            Ast::Var(v) => {
+                return Ok((*vars.get(v).context("variable must exist")?, k));
+            }
+            Ast::Assign(v, a) => {
+                let (a, k) = a.wasm(f, m, tab, k, vars, funs)?;
+                vars.insert(v.clone(), a).context("variable must exist")?;
+                return Ok((a, k));
+            }
+            Ast::Alloca(a) => {
+                let (a, k) = a.wasm(f, m, tab, k, vars, funs)?;
+                let sp = *vars.get("$sp").unwrap();
+                let n = add_op(f, &[a], &[Type::I32], Operator::I32WrapI64);
+                f.append_to_block(k, n);
+                let n = add_op(f, &[sp, n], &[Type::I32], Operator::I32Add);
+                f.append_to_block(k, n);
+                vars.insert("$sp".to_owned(), n)
+                    .context("variable must exist")?;
+                let sp = add_op(f, &[sp], &[Type::I64], Operator::I64ExtendI32U);
+                f.append_to_block(k, sp);
+                let n = add_op(
+                    f,
+                    &[],
+                    &[Type::I64],
+                    Operator::I64Const {
+                        value: (tab.alloca_mem.index() as u64) << 32,
+                    },
+                );
+                f.append_to_block(k, n);
+                let n = add_op(f, &[sp, n], &[Type::I64], Operator::I64Add);
+                f.append_to_block(k, n);
+                return Ok((n, k));
+            }
+            Ast::Load(a) => {
+                let (a, k) = a.wasm(f, m, tab, k, vars, funs)?;
+                return mb(m, f, k, a, |f, _, m, v, b| {
+                    let o = add_op(
+                        f,
+                        &[v],
+                        &[Type::I64],
+                        Operator::I64Load {
+                            memory: MemoryArg {
+                                align: 0,
+                                offset: 0,
+                                memory: m,
+                            },
+                        },
+                    );
+                    f.append_to_block(b, o);
+                    return Ok(o);
+                });
+            }
+            Ast::Store(a, b) => {
+                let (a, k) = a.wasm(f, m, tab, k, vars, funs)?;
+                let (c, k) = b.wasm(f, m, tab, k, vars, funs)?;
+                return mb(m, f, k, a, |f, _, m, v, b| {
+                    let o = add_op(
+                        f,
+                        &[v, c],
+                        &[],
+                        Operator::I64Store {
+                            memory: MemoryArg {
+                                align: 0,
+                                offset: 0,
+                                memory: m,
+                            },
+                        },
+                    );
+                    f.append_to_block(b, o);
+                    return Ok(c);
+                });
+            }
+            Ast::Const(ko) => {
+                let v = add_op(f, &[], &[Type::I64], Operator::I64Const { value: *ko });
+                f.append_to_block(k, v);
+                return Ok((v, k));
+            }
+            Ast::Bin(op, a, b) => {
+                let (a, k) = a.wasm(f, m, tab, k, vars, funs)?;
+                let (b, k) = b.wasm(f, m, tab, k, vars, funs)?;
+                let r = add_op(
+                    f,
+                    &[a, b],
+                    &[Type::I64],
+                    match op {
+                        crate::backend::BinOp::Add => Operator::I64Add,
+                        crate::backend::BinOp::Sub => Operator::I64Sub,
+                        crate::backend::BinOp::Mul => Operator::I64Mul,
+                        crate::backend::BinOp::And => Operator::I64And,
+                        crate::backend::BinOp::Or => Operator::I64Or,
+                        crate::backend::BinOp::Xor => Operator::I64Xor,
+                        crate::backend::BinOp::DivU => Operator::I64DivU,
+                        crate::backend::BinOp::ModU => Operator::I64RemU,
+                        crate::backend::BinOp::DivS => Operator::I64DivS,
+                        crate::backend::BinOp::ModS => Operator::I64RemS,
+                        crate::backend::BinOp::Shl => Operator::I64Shl,
+                        crate::backend::BinOp::ShrS => Operator::I64ShrS,
+                        crate::backend::BinOp::ShrU => Operator::I64ShrU,
+                    },
+                );
+                f.append_to_block(k, r);
+                return Ok((r, k));
+            }
+            Ast::If {
+                cond,
+                cty,
+                if_true,
+                if_false,
+            } => {
+                let t = f.add_block();
+                let fl = f.add_block();
+                let nxt = f.add_block();
+                let (c, k) = cond.wasm(f, m, tab, k, vars, funs)?;
+                match cty {
+                    crate::backend::CondType::Eq => {
+                        let c = add_op(f, &[c], &[Type::I32], Operator::I64Eqz);
+                        f.append_to_block(k, c);
+                        f.set_terminator(
+                            k,
+                            waffle::Terminator::CondBr {
+                                cond: c,
+                                if_true: BlockTarget {
+                                    block: fl,
+                                    args: vec![],
+                                },
+                                if_false: BlockTarget {
+                                    block: t,
+                                    args: vec![],
+                                },
+                            },
+                        );
+                    }
+                    crate::backend::CondType::Greater => {
+                        let d = add_op(f, &[], &[Type::I64], Operator::I64Const { value: 0 });
+                        f.append_to_block(k, d);
+                        let c = add_op(f, &[c], &[Type::I32], Operator::I64LtU);
+                        f.append_to_block(k, c);
+                        f.set_terminator(
+                            k,
+                            waffle::Terminator::CondBr {
+                                cond: c,
+                                if_true: BlockTarget {
+                                    block: fl,
+                                    args: vec![],
+                                },
+                                if_false: BlockTarget {
+                                    block: t,
+                                    args: vec![],
+                                },
+                            },
+                        );
+                    }
+                }
+                let bak = vars.clone();
+                let (v2, k2) = if_true.wasm(f, m, tab, t, vars, funs)?;
+                let mut tr = vec![];
+                for (_, a) in vars.iter() {
+                    tr.push(*a);
+                }
+                tr.push(v2);
+                *vars = bak.clone();
+                f.set_terminator(
+                    k2,
+                    waffle::Terminator::Br {
+                        target: BlockTarget {
+                            block: nxt,
+                            args: tr,
+                        },
+                    },
+                );
+                let (v2, k2) = if_false.wasm(f, m, tab, fl, vars, funs)?;
+                let mut tr = vec![];
+                for (_, a) in vars.iter() {
+                    tr.push(*a);
+                }
+                tr.push(v2);
+                *vars = bak.clone();
+                f.set_terminator(
+                    k2,
+                    waffle::Terminator::Br {
+                        target: BlockTarget {
+                            block: nxt,
+                            args: tr,
+                        },
+                    },
+                );
+                for (k, a) in vars.iter_mut() {
+                    *a = f.add_blockparam(nxt, f.values[*a].ty(&f.type_pool).unwrap());
+                }
+                let r = f.add_blockparam(nxt, Type::I64);
+                return Ok((r, nxt));
+            }
+            Ast::Param(p) => {
+                return Ok((f.blocks[f.entry].params[*p].1, k));
+            }
+            Ast::Linux(l) => {
+                return lp(l, f, m, tab, k, vars, funs);
+            }
+            Ast::OS => {
+                let v = add_op(
+                    f,
+                    &[],
+                    &[Type::I64],
+                    Operator::I64Const {
+                        value: OS_WASM as u64,
+                    },
+                );
+                f.append_to_block(k, v);
+                return Ok((v, k));
+            }
+            Ast::Ret(r) => {
+                let (a, k) = r.wasm(f, m, tab, k, vars, funs)?;
+                f.set_terminator(k, waffle::Terminator::Return { values: vec![a] });
+                let shadow = f.add_block();
+                let shadow_value = add_op(f, &[], &[Type::I64], Operator::Unreachable);
+                f.append_to_block(shadow, shadow_value);
+                return Ok((shadow_value, shadow));
+            }
+            Ast::DoWhile { body, cond, cty } => {
+                let bind = f.add_block();
+                let mut r = vec![];
+                for (_, v) in vars.iter_mut() {
+                    r.push(*v);
+                    *v = f.add_blockparam(bind, f.values[*v].ty(&f.type_pool).unwrap());
+                }
+                f.set_terminator(
+                    k,
+                    Terminator::Br {
+                        target: BlockTarget {
+                            block: bind,
+                            args: r,
+                        },
+                    },
+                );
+                let fl = f.add_block();
+                let (a, l) = body.wasm(f, m, tab, bind, vars, funs)?;
+                let (c, l) = cond.wasm(f, m, tab, l, vars, funs)?;
+                let mut r = vec![];
+                for (_, v) in vars.iter_mut() {
+                    r.push(*v);
+                    *v = f.add_blockparam(fl, f.values[*v].ty(&f.type_pool).unwrap());
+                }
+                match cty {
+                    crate::backend::CondType::Eq => {
+                        let c = add_op(f, &[c], &[Type::I32], Operator::I64Eqz);
+                        f.append_to_block(k, c);
+                        f.set_terminator(
+                            l,
+                            waffle::Terminator::CondBr {
+                                cond: c,
+                                if_true: BlockTarget {
+                                    block: fl,
+                                    args: r.iter().map(|a| *a).chain(once(a)).collect(),
+                                },
+                                if_false: BlockTarget {
+                                    block: bind,
+                                    args: r,
+                                },
+                            },
+                        );
+                    }
+                    crate::backend::CondType::Greater => {
+                        let d = add_op(f, &[], &[Type::I64], Operator::I64Const { value: 0 });
+                        f.append_to_block(k, d);
+                        let c = add_op(f, &[c], &[Type::I32], Operator::I64LtU);
+                        f.append_to_block(k, c);
+                        f.set_terminator(
+                            l,
+                            waffle::Terminator::CondBr {
+                                cond: c,
+                                if_true: BlockTarget {
+                                    block: fl,
+                                    args: r.iter().map(|a| *a).chain(once(a)).collect(),
+                                },
+                                if_false: BlockTarget {
+                                    block: bind,
+                                    args: r,
+                                },
+                            },
+                        );
+                    }
+                };
+                let w = f.add_blockparam(fl, Type::I64);
+                return Ok((w, fl));
+            }
+            Ast::Many(ma) => {
+                let mut a = Value::invalid();
+                for ma in ma.iter() {
+                    (a, k) = ma.wasm(f, m, tab, k, vars, funs)?;
+                }
+                return Ok((a, k));
+            }
+        }
+    }
+}

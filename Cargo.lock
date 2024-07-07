@@ -342,9 +342,9 @@ dependencies = [
 
 [[package]]
 name = "castaway"
-version = "0.2.2"
+version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8a17ed5635fc8536268e5d4de1e22e81ac34419e5f052d4d51f4e01dcc263fcc"
+checksum = "0abae9be0aaf9ea96a3b1b8b1b55c602ca751eba1b1500220cea4ecbafe7c0d5"
 dependencies = [
  "rustversion",
 ]
@@ -949,6 +949,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "iced-x86"
+version = "1.21.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7c447cff8c7f384a7d4f741cfcff32f75f3ad02b406432e8d6c878d56b1edf6b"
+dependencies = [
+ "lazy_static",
+]
+
+[[package]]
 name = "id-arena"
 version = "2.2.1"
 source = "git+https://github.com/Mossaka/id-arena-fork.git?branch=serialize#cae2a0a63d505adec402289eea90c52d3205007a"
@@ -1394,6 +1403,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nonempty"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "303e8749c804ccd6ca3b428de7fe0d86cb86bc7606bc15291f100fd487960bb8"
+dependencies = [
+ "serde",
+]
+
+[[package]]
 name = "normpath"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1722,6 +1740,25 @@ dependencies = [
 ]
 
 [[package]]
+name = "proby"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "castaway",
+ "chumsky",
+ "either",
+ "iced-x86",
+ "id-arena",
+ "indexmap 2.2.6",
+ "nonempty",
+ "once_cell",
+ "portal-pc-waffle",
+ "rand",
+ "rat-ir",
+ "serde",
+]
+
+[[package]]
 name = "proc-macro-error"
 version = "1.0.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1907,6 +1944,7 @@ dependencies = [
 name = "rat-debug"
 version = "0.1.0"
 dependencies = [
+ "serde",
  "sha3",
 ]
 
@@ -2011,6 +2049,7 @@ dependencies = [
  "prost-types",
  "quasiquote",
  "quote",
+ "rand",
  "rat-ast",
  "rat-ir",
  "rat-script",
@@ -2025,6 +2064,17 @@ dependencies = [
  "portal-pc-waffle",
  "rat-ir",
  "rat-waffle",
+]
+
+[[package]]
+name = "rave"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "iced-x86",
+ "id-arena",
+ "rat-ir",
+ "rayon",
 ]
 
 [[package]]

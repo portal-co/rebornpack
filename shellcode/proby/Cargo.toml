@@ -1,0 +1,22 @@
+[package]
+name = "proby"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+anyhow.workspace = true
+chumsky.workspace = true
+iced-x86.workspace = true
+id-arena={workspace = true,features=[]}
+indexmap={workspace = true,features=["serde"]}
+# more-waffle.workspace = true
+nonempty = {version="0.10.0",features=["serde","serialize"]}
+once_cell = "1.19.0"
+rand.workspace = true
+portal-pc-waffle.workspace = true
+serde.workspace = true
+rat-ir = { version = "0.1.0", path = "../../ratpack/rat-ir" }
+either.workspace = true
+castaway = "0.2.3"

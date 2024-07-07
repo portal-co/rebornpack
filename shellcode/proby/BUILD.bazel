@@ -1,0 +1,26 @@
+load("@rules_rust//rust:defs.bzl", "rust_doc", "rust_library")
+
+package(default_visibility = ["//visibility:public"])
+
+rust_library(
+    name = "proby",
+    srcs = glob([
+        "src/*.rs",
+        "src/**/*.rs",
+    ]),
+    deps = [
+        "//more-waffle",
+        "//ratpack/rat-ir",
+        "@crates//:anyhow",
+        "@crates//:chumsky",
+        "@crates//:iced-x86",
+        "@crates//:id-arena",
+        "@crates//:indexmap",
+        "@crates//:nonempty",
+        "@crates//:once_cell",
+        "@crates//:rand",
+        "@crates//:serde",
+        "@crates//:waffle",
+        "@crates//:either",
+    ],
+)

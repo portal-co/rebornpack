@@ -1,0 +1,608 @@
+use chumsky::primitive::todo;
+use id_arena::Id;
+use more_waffle::stack::Stack;
+use more_waffle::{add_op, new_sig};
+use waffle::entity::EntityRef;
+use waffle::{
+    BlockTarget, Func, FunctionBody, Memory, MemoryArg, Module, Operator, SignatureData, Table,
+    Terminator, Type, Value,
+};
+
+use super::ssa::{Block, Instr, SSAFunc};
+use super::x64::os::OS_WASM;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    iter::once,
+};
+
+pub fn push(p: &[Value], p2: &[Type], f: &mut FunctionBody, l: waffle::Block) -> Vec<Value> {
+    let oi32 = add_op(f, &[], &[Type::I32], Operator::I32Const { value: 0 });
+    f.append_to_block(l, oi32);
+    let mut raw = p
+        .iter()
+        .flat_map(|a| {
+            let (a, b) = hb(f, l, *a);
+            return vec![a, b];
+        })
+        .collect::<Vec<_>>()
+        .into_iter();
+    let mut params = vec![];
+    for p in p2.iter() {
+        match p {
+            Type::I32 => params.push(raw.next().unwrap_or(oi32)),
+            Type::I64 => {
+                let a = raw.next().unwrap_or(oi32);
+                let b = raw.next().unwrap_or(oi32);
+                params.push(bb(f, l, a, b));
+            }
+            Type::F32 => {
+                let n = raw.next().unwrap_or(oi32);
+                let n = add_op(f, &[n], &[Type::F32], Operator::F32ReinterpretI32);
+                f.append_to_block(l, n);
+                params.push(n);
+            }
+            Type::F64 => {
+                let a = raw.next().unwrap_or(oi32);
+                let b = raw.next().unwrap_or(oi32);
+                let n = bb(f, l, a, b);
+                let n = add_op(f, &[n], &[Type::F64], Operator::F64ReinterpretI64);
+                f.append_to_block(l, n);
+                params.push(n);
+            }
+            Type::V128 => todo!(),
+            Type::FuncRef => todo!(),
+            Type::TypedFuncRef(_, _) => todo!(),
+            Type::ExternRef => todo!(),
+        }
+    }
+    return params;
+}
+pub fn pop(p: &[Value], f: &mut FunctionBody, l: waffle::Block) -> Vec<Value> {
+    let mut u = vec![];
+    for p in p.iter() {
+        let t = f.values[*p].ty(&f.type_pool).unwrap();
+        match t {
+            Type::I32 => u.push(*p),
+            Type::I64 => {
+                let (a, b) = hb(f, l, *p);
+                u.push(a);
+                u.push(b);
+            }
+            Type::F32 => {
+                let n = add_op(f, &[*p], &[Type::I32], Operator::I32ReinterpretF32);
+                f.append_to_block(l, n);
+                u.push(n);
+            }
+            Type::F64 => {
+                let n = add_op(f, &[*p], &[Type::I64], Operator::I64ReinterpretF64);
+                f.append_to_block(l, n);
+                let (a, b) = hb(f, l, n);
+                u.push(a);
+                u.push(b);
+            }
+            Type::V128 => todo!(),
+            Type::FuncRef => todo!(),
+            Type::TypedFuncRef(_, _) => todo!(),
+            Type::ExternRef => todo!(),
+        }
+    }
+    let oi32 = add_op(f, &[], &[Type::I32], Operator::I32Const { value: 0 });
+    f.append_to_block(l, oi32);
+    if u.len() % 2 == 1 {
+        u.push(oi32);
+    }
+    return u.chunks_exact(2).map(|k| bb(f, l, k[0], k[1])).collect();
+}
+pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
+    let mut s = DefaultHasher::new();
+    t.hash(&mut s);
+    s.finish()
+}
+pub fn hb(f: &mut FunctionBody, k: waffle::Block, v: Value) -> (Value, Value) {
+    let ko = add_op(f, &[], &[Type::I32], Operator::I32Const { value: 32 });
+    f.append_to_block(k, ko);
+    let a = add_op(f, &[v, ko], &[Type::I64], Operator::I64ShrU);
+    f.append_to_block(k, a);
+    let b = add_op(f, &[v], &[Type::I32], Operator::I32WrapI64);
+    f.append_to_block(k, b);
+    let a = add_op(f, &[a], &[Type::I32], Operator::I32WrapI64);
+    f.append_to_block(k, a);
+    return (a, b);
+}
+pub fn bb(f: &mut FunctionBody, k: waffle::Block, a: Value, b: Value) -> Value {
+    let b = add_op(f, &[b], &[Type::I64], Operator::I64ExtendI32U);
+    f.append_to_block(k, b);
+    let a = add_op(f, &[a], &[Type::I64], Operator::I64ExtendI32U);
+    f.append_to_block(k, a);
+    let ko = add_op(f, &[], &[Type::I32], Operator::I32Const { value: 32 });
+    f.append_to_block(k, ko);
+    let a = add_op(f, &[a, ko], &[Type::I64], Operator::I64Shl);
+    f.append_to_block(k, a);
+    let a = add_op(f, &[a, b], &[Type::I64], Operator::I64Add);
+    f.append_to_block(k, a);
+    return a;
+}
+pub fn mb(
+    m: &mut Module,
+    f: &mut FunctionBody,
+    k: waffle::Block,
+    v: Value,
+    mut go: impl FnMut(
+        &mut FunctionBody,
+        &mut Module,
+        Memory,
+        Value,
+        waffle::Block,
+    ) -> anyhow::Result<(Value, waffle::Block)>,
+) -> anyhow::Result<(Value, waffle::Block)> {
+    let nxt = f.add_block();
+    let (mi, n) = hb(f, k, v);
+    let mut ks = vec![];
+    for mem in m.memories.iter() {
+        let nb = f.add_block();
+        let (b, k) = go(f, m, mem, n, nb)?;
+        ks.push(BlockTarget {
+            block: nb,
+            args: vec![],
+        });
+        f.set_terminator(
+            k,
+            waffle::Terminator::Br {
+                target: BlockTarget {
+                    block: nxt,
+                    args: vec![v],
+                },
+            },
+        );
+    }
+    let u = f.add_block();
+    f.set_terminator(u, Terminator::Unreachable);
+    f.set_terminator(
+        k,
+        Terminator::Select {
+            value: mi,
+            targets: ks,
+            default: BlockTarget {
+                block: u,
+                args: vec![],
+            },
+        },
+    );
+
+    return Ok((f.add_blockparam(nxt, Type::I64), nxt));
+}
+pub struct Ctx {
+    pub stack: Stack,
+    pub tab: Table,
+}
+impl SSAFunc {
+    pub fn wasm(
+        &self,
+        f: &mut FunctionBody,
+        m: &mut Module,
+        ctx: &mut Ctx,
+        ftab: &BTreeMap<String, Func>,
+    ) -> anyhow::Result<BTreeMap<Id<Block>, waffle::Block>> {
+        let mut map = BTreeMap::new();
+        let sp_base = add_op(
+            f,
+            &[],
+            &[Type::I32],
+            Operator::GlobalGet {
+                global_index: ctx.stack.glob,
+            },
+        );
+        f.blocks[f.entry].insts = once(sp_base)
+            .chain(f.blocks[f.entry].insts.iter().map(|a| *a))
+            .collect();
+        for (ki, b) in self.blocks.iter() {
+            map.insert(ki, f.add_block());
+        }
+        for (ki, b) in self.blocks.iter() {
+            let k = *map.get(&ki).unwrap();
+            b.wasm(f, m, k, ctx, sp_base, &map, ftab)?;
+        }
+        return Ok(map);
+    }
+    pub fn wasm_pure(
+        &self,
+        f: &mut FunctionBody,
+        m: &mut Module,
+        ctx: &mut Ctx,
+        ftab: &BTreeMap<String, Func>,
+    ) -> anyhow::Result<()> {
+        let w = self.wasm(f, m, ctx, ftab)?;
+        f.entry = *w.get(&self.entry).unwrap();
+        return Ok(());
+    }
+}
+impl Block {
+    pub fn wasm(
+        &self,
+        f: &mut FunctionBody,
+        m: &mut Module,
+        mut k: waffle::Block,
+        ctx: &mut Ctx,
+        sp_base: Value,
+        all_ks: &BTreeMap<Id<Block>, waffle::Block>,
+        ftab: &BTreeMap<String, Func>,
+    ) -> anyhow::Result<()> {
+        let mut vals = BTreeMap::new();
+        for (k2, v) in self.insts.iter() {
+            vals.insert(
+                k2.clone(),
+                match v {
+                    super::ssa::Instr::Bin(op, a, b) => {
+                        let a = vals.get(a).copied().unwrap_or(Value::invalid());
+                        let b = vals.get(b).copied().unwrap_or(Value::invalid());
+                        let v = add_op(
+                            f,
+                            &[a, b],
+                            &[Type::I64],
+                            match op {
+                                crate::backend::BinOp::Add => Operator::I64Add,
+                                crate::backend::BinOp::Sub => Operator::I64Sub,
+                                crate::backend::BinOp::Mul => Operator::I64Mul,
+                                crate::backend::BinOp::And => Operator::I64And,
+                                crate::backend::BinOp::Or => Operator::I64Or,
+                                crate::backend::BinOp::Xor => Operator::I64Xor,
+                                crate::backend::BinOp::DivU => Operator::I64DivU,
+                                crate::backend::BinOp::ModU => Operator::I64RemU,
+                                crate::backend::BinOp::DivS => Operator::I64DivS,
+                                crate::backend::BinOp::ModS => Operator::I64RemS,
+                                crate::backend::BinOp::Shl => Operator::I64Shl,
+                                crate::backend::BinOp::ShrS => Operator::I64ShrS,
+                                crate::backend::BinOp::ShrU => Operator::I64ShrU,
+                            },
+                        );
+                        f.append_to_block(k, v);
+                        v
+                    }
+                    super::ssa::Instr::Addrof(s) => {
+                        let fs = *ftab.get(s).unwrap();
+                        m.tables[ctx.tab].func_elements =
+                            Some(match m.tables[ctx.tab].func_elements.clone() {
+                                None => vec![fs],
+                                Some(mut a) => {
+                                    if !a.contains(&fs) {
+                                        a.push(fs)
+                                    };
+                                    a
+                                }
+                            });
+                        let i = m.tables[ctx.tab]
+                            .func_elements
+                            .as_ref()
+                            .unwrap()
+                            .iter()
+                            .position(|a| *a == fs)
+                            .unwrap();
+                        let i = i as u64;
+                        let v = add_op(f, &[], &[Type::I64], Operator::I64Const { value: i });
+                        f.append_to_block(k, v);
+                        v
+                    }
+                    super::ssa::Instr::Call(a, b) => {
+                        let mut r = vec![];
+                        for a in b {
+                            let b = vals.get(a).copied().unwrap_or(Value::invalid());
+                            r.push(b);
+                        }
+                        let op = if let Some(Instr::Addrof(a)) = self.insts.get(a) {
+                            Operator::Call {
+                                function_index: *ftab.get(a).unwrap(),
+                            }
+                        } else {
+                            let s = new_sig(
+                                m,
+                                SignatureData {
+                                    returns: f.rets.clone(),
+                                    params: r
+                                        .iter()
+                                        .map(|x| f.values[*x].ty(&f.type_pool).unwrap())
+                                        .collect(),
+                                },
+                            );
+                            r = vec![vals.get(a).copied().unwrap_or(Value::invalid())]
+                                .into_iter()
+                                .chain(r.into_iter())
+                                .collect();
+                            Operator::CallIndirect {
+                                sig_index: s,
+                                table_index: ctx.tab,
+                            }
+                        };
+                        let v = add_op(f, &r, &[Type::I64], op);
+                        f.append_to_block(k, v);
+                        v
+                    }
+                    super::ssa::Instr::Param(p) => {
+                        while f.blocks[k].params.len() <= *p {
+                            f.add_blockparam(k, Type::I64);
+                        }
+                        f.blocks[k].params[*p].1
+                    }
+                    super::ssa::Instr::Const(ko) => {
+                        let v = add_op(f, &[], &[Type::I64], Operator::I64Const { value: *ko });
+                        f.append_to_block(k, v);
+                        v
+                    }
+                    super::ssa::Instr::Load(p,s) => {
+                        let v = vals.get(p).copied().unwrap_or(Value::invalid());
+                        let (w, l) = mb(m, f, k, v, |f, m, e, v, b| {
+                            let v = add_op(
+                                f,
+                                &[v],
+                                &[Type::I64],
+                                match s{
+                                    super::Size::_8 => Operator::I64Load8U {
+                                        memory: MemoryArg {
+                                            align: 0,
+                                            offset: 0,
+                                            memory: e,
+                                        },
+                                    },
+                                    super::Size::_16 => Operator::I64Load16U {
+                                        memory: MemoryArg {
+                                            align: 0,
+                                            offset: 0,
+                                            memory: e,
+                                        },
+                                    },
+                                    super::Size::_32 => Operator::I64Load32U {
+                                        memory: MemoryArg {
+                                            align: 0,
+                                            offset: 0,
+                                            memory: e,
+                                        },
+                                    },
+                                    super::Size::_64 => Operator::I64Load {
+                                        memory: MemoryArg {
+                                            align: 0,
+                                            offset: 0,
+                                            memory: e,
+                                        },
+                                    },
+                                },
+                            );
+                            f.append_to_block(b, v);
+                            return Ok((v, b));
+                        })?;
+                        k = l;
+                        w
+                    }
+                    super::ssa::Instr::Store(p, w,s) => {
+                        let v = vals.get(p).copied().unwrap_or(Value::invalid());
+                        let w = vals.get(w).cloned().unwrap_or(Value::invalid());
+                        let (w, l) = mb(m, f, k, v, |f, m, e, v, b| {
+                            let v2 = add_op(
+                                f,
+                                &[w, v],
+                                &[Type::I64],
+                                match s{
+                                    super::Size::_8 => Operator::I64Store8 {
+                                        memory: MemoryArg {
+                                            align: 0,
+                                            offset: 0,
+                                            memory: e,
+                                        },
+                                    },
+                                    super::Size::_16 => Operator::I64Store16 {
+                                        memory: MemoryArg {
+                                            align: 0,
+                                            offset: 0,
+                                            memory: e,
+                                        },
+                                    },
+                                    super::Size::_32 => Operator::I64Store32 {
+                                        memory: MemoryArg {
+                                            align: 0,
+                                            offset: 0,
+                                            memory: e,
+                                        },
+                                    },
+                                    super::Size::_64 => Operator::I64Store {
+                                        memory: MemoryArg {
+                                            align: 0,
+                                            offset: 0,
+                                            memory: e,
+                                        },
+                                    },
+                                },
+                            );
+                            f.append_to_block(b, v2);
+                            return Ok((v, b));
+                        })?;
+                        k = l;
+                        w
+                    }
+                    super::ssa::Instr::Alloca(n) => {
+                        let n = vals.get(n).copied().unwrap_or(Value::invalid());
+                        let n = add_op(f, &[n], &[Type::I32], Operator::I32WrapI64);
+                        f.append_to_block(k, n);
+                        let n = ctx.stack.alloc(n, f, k);
+                        let offset = add_op(
+                            f,
+                            &[],
+                            &[Type::I32],
+                            Operator::I32Const {
+                                value: ctx.stack.mem.index() as u32,
+                            },
+                        );
+                        f.append_to_block(k, offset);
+                        bb(f, k, offset, n)
+                    }
+                    super::ssa::Instr::Plat(p, l) => match p {
+                        super::Plat::WASM => {
+                            let ls = l.iter().filter_map(|a|vals.get(a).copied()).collect::<Vec<_>>();
+
+                            todo!()
+                        }
+                        _ => {
+                            let v = add_op(f, &[], &[], Operator::Unreachable);
+                            f.append_to_block(k, v);
+                            v
+                        }
+                    },
+                    super::ssa::Instr::OS => {
+                        let v = add_op(
+                            f,
+                            &[],
+                            &[Type::I64],
+                            Operator::I64Const {
+                                value: OS_WASM as u64,
+                            },
+                        );
+                        f.append_to_block(k, v);
+                        v
+                    }
+                },
+            );
+        }
+        match &self.term {
+            super::ssa::Term::ReturnCall(a, b) => {
+                let mut r = vec![];
+                for a in b {
+                    let b = vals.get(a).copied().unwrap_or(Value::invalid());
+                    r.push(b);
+                }
+                if let Some(Instr::Addrof(a)) = self.insts.get(a) {
+                    f.set_terminator(
+                        k,
+                        Terminator::ReturnCall {
+                            func: *ftab.get(a).unwrap(),
+                            args: r,
+                        },
+                    )
+                } else {
+                    let s = new_sig(
+                        m,
+                        SignatureData {
+                            returns: f.rets.clone(),
+                            params: r
+                                .iter()
+                                .map(|x| f.values[*x].ty(&f.type_pool).unwrap())
+                                .collect(),
+                        },
+                    );
+                    r = vec![vals.get(a).copied().unwrap_or(Value::invalid())]
+                        .into_iter()
+                        .chain(r.into_iter())
+                        .collect();
+                    // let v = add_op(
+                    //     f,
+                    //     &r,
+                    //     &[Type::I64],
+                    //     Operator::CallIndirect {
+                    //         sig_index: s,
+                    //         table_index: ctx.tab,
+                    //     },
+                    // );
+                    f.set_terminator(
+                        k,
+                        Terminator::ReturnCallIndirect {
+                            sig: s,
+                            table: ctx.tab,
+                            args: r,
+                        },
+                    );
+                }
+            }
+            super::ssa::Term::Br(t) => {
+                f.set_terminator(
+                    k,
+                    Terminator::Br {
+                        target: BlockTarget {
+                            block: *all_ks.get(&t.id).unwrap(),
+                            args: t
+                                .params
+                                .iter()
+                                .map(|p| vals.get(p).copied().unwrap_or(Value::invalid()))
+                                .collect(),
+                        },
+                    },
+                );
+            }
+            super::ssa::Term::BrIf {
+                cond,
+                cty,
+                if_true,
+                if_false,
+            } => {
+                let c = vals.get(cond).copied().unwrap_or(Value::invalid());
+                match cty {
+                    crate::backend::CondType::Eq => {
+                        let c = add_op(f, &[c], &[Type::I32], Operator::I64Eqz);
+                        f.append_to_block(k, c);
+                        f.set_terminator(
+                            k,
+                            waffle::Terminator::CondBr {
+                                cond: c,
+                                if_true: BlockTarget {
+                                    block: *all_ks.get(&if_false.id).unwrap(),
+                                    args: if_false
+                                        .params
+                                        .iter()
+                                        .map(|p| vals.get(p).copied().unwrap_or(Value::invalid()))
+                                        .collect(),
+                                },
+                                if_false: BlockTarget {
+                                    block: *all_ks.get(&if_true.id).unwrap(),
+                                    args: if_true
+                                        .params
+                                        .iter()
+                                        .map(|p| vals.get(p).copied().unwrap_or(Value::invalid()))
+                                        .collect(),
+                                },
+                            },
+                        );
+                    }
+                    crate::backend::CondType::Greater => {
+                        let d = add_op(f, &[], &[Type::I64], Operator::I64Const { value: 0 });
+                        f.append_to_block(k, d);
+                        let c = add_op(f, &[c], &[Type::I32], Operator::I64LtS);
+                        f.append_to_block(k, c);
+                        f.set_terminator(
+                            k,
+                            waffle::Terminator::CondBr {
+                                cond: c,
+                                if_true: BlockTarget {
+                                    block: *all_ks.get(&if_false.id).unwrap(),
+                                    args: if_false
+                                        .params
+                                        .iter()
+                                        .map(|p| vals.get(p).copied().unwrap_or(Value::invalid()))
+                                        .collect(),
+                                },
+                                if_false: BlockTarget {
+                                    block: *all_ks.get(&if_true.id).unwrap(),
+                                    args: if_true
+                                        .params
+                                        .iter()
+                                        .map(|p| vals.get(p).copied().unwrap_or(Value::invalid()))
+                                        .collect(),
+                                },
+                            },
+                        );
+                    }
+                }
+            }
+            super::ssa::Term::Ret(v) => {
+                let v = vals.get(v).copied().unwrap_or(Value::invalid());
+                let w = add_op(
+                    f,
+                    &[sp_base],
+                    &[],
+                    Operator::GlobalSet {
+                        global_index: ctx.stack.glob,
+                    },
+                );
+                f.append_to_block(k, w);
+                f.set_terminator(k, Terminator::Return { values: vec![v] });
+            }
+            super::ssa::Term::Null => f.set_terminator(k, Terminator::Unreachable),
+        }
+        return Ok(());
+    }
+}

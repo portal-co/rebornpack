@@ -3,7 +3,18 @@ use either::Either;
 use waffle::{
     Block, ExportKind, FunctionBody, ImportKind, Memory, Module, Operator, Type, Value, ValueDef,
 };
-
+// pub fn fd_read(m:&Module, o: &Operator) -> Option<waffle::Func>{
+//     let Operator::Call { function_index } = o else{
+//         return None;
+//     };
+//     let Some(x) = m.imports.iter().find(|x|x.kind == ImportKind::Func(*function_index)) else{
+//         return None;
+//     };
+//     if x.name == "fd_read"{
+//         return Some(*function_index);
+//     };
+//     return None;
+// }
 pub fn memory(m: &Module) -> Option<Memory> {
     let mut mem = m
         .exports

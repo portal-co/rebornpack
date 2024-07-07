@@ -14,7 +14,7 @@ use crate::{
     transform::{ctx::NormalTermIn, NormalTerm},
     BlockTarget, Call, SaneTerminator, Use, Value,
 };
-#[derive(Debug)]
+#[derive(Debug,Serialize,Deserialize)]
 pub struct PerID<A, B> {
     pub data: Vec<B>,
     default: B,
@@ -240,6 +240,11 @@ pub struct DropGuest<Y> {
 no_push!(
     type DropGuest<Y>;
 );
+no_push!(type u64;);
+no_push!(type u32;);
+no_push!(type u16;);
+no_push!(type u8;);
+no_push!(type usize;);
 
 pub struct Catch<O, T, Y, S, W> {
     pub wrapped: W,

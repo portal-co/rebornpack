@@ -1,3 +1,4 @@
+use export::{ExportOp, ExportTerm, WaffleExtra};
 use import::Canon;
 use once_cell::sync::Lazy;
 use proc_macro2::{Span, TokenStream};
@@ -7,6 +8,7 @@ use quote::{format_ident, quote};
 use rat_ast::export::rust::{Rust, RustOp};
 use rat_ir::{
     bi::license::Taint, no_push, util::Push, BoundOp, BoundSelect, BoundTerm, BoundType, Func,
+    SaneTerminator,
 };
 use serde::{Deserialize, Serialize};
 use syn::Ident;
@@ -66,15 +68,21 @@ impl Taint for OpWrapper {
         };
     }
 }
-pub fn do_test(
+pub fn do_test<
+    O: ExportOp<O, T, Y, S, C> + Clone,
+    T: ExportTerm<O, T, Y, S, C> + SaneTerminator<O, T, Y, S> + Clone,
+    Y: WaffleExtra<Vec<waffle::Type>>,
+    S: WaffleExtra<Option<usize>> + Default + Ord,
+    C,
+>(
     m: &mut waffle::Module,
     f: &mut waffle::FunctionBody,
     pass: &mut impl FnMut(
         &mut Module,
+        &mut C,
         Func<BoundOp<Canon>, BoundTerm<Canon>, BoundType<Canon>, BoundSelect<Canon>>,
-    ) -> anyhow::Result<
-        Func<BoundOp<Canon>, BoundTerm<Canon>, BoundType<Canon>, BoundSelect<Canon>>,
-    >,
+    ) -> anyhow::Result<Func<O, T, Y, S>>,
+    ctx: &mut C,
 ) -> anyhow::Result<()> {
     let mut g: Func<BoundOp<Canon>, BoundTerm<Canon>, BoundType<Canon>, BoundSelect<Canon>> =
         Default::default();
@@ -82,7 +90,7 @@ pub fn do_test(
     // eprintln!("{}",f.display("", None));
     let fm = import::import_func(&mut g, &f, &mut import::Normal { fn_map: () })?;
     g.entry = fm[f.entry].unwrap();
-    let mut g = pass(m,g)?;
+    let mut g = pass(m, ctx, g)?;
     // eprintln!(
     //     "{:?}",
     //     g.blocks
@@ -99,21 +107,27 @@ pub fn do_test(
     );
     let mut new = FunctionBody::new(&m, sig);
     rat_ir::maxssa::maxssa(&mut g);
-    export::export_func_seal(&mut (), m, &mut new, &g)?;
+    export::export_func_seal(ctx, m, &mut new, &g)?;
     *f = new;
     // eprintln!("{}",f.display("", None));
     Ok(())
 }
-pub fn test_mod(
+pub fn test_mod<
+    O: ExportOp<O, T, Y, S, C> + Clone,
+    T: ExportTerm<O, T, Y, S, C> + SaneTerminator<O, T, Y, S> + Clone,
+    Y: WaffleExtra<Vec<waffle::Type>>,
+    S: WaffleExtra<Option<usize>> + Default + Ord,
+    C,
+>(
     m: &mut Module,
     pass: &mut impl FnMut(
         &mut Module,
+        &mut C,
         Func<BoundOp<Canon>, BoundTerm<Canon>, BoundType<Canon>, BoundSelect<Canon>>,
-    ) -> anyhow::Result<
-        Func<BoundOp<Canon>, BoundTerm<Canon>, BoundType<Canon>, BoundSelect<Canon>>,
-    >,
+    ) -> anyhow::Result<Func<O, T, Y, S>>,
+    ctx: &mut C,
 ) -> anyhow::Result<()> {
-    return m.try_take_per_func_body(|m, f| do_test(m, f, pass));
+    return m.try_take_per_func_body(|m, f| do_test(m, f, pass, ctx));
 }
 #[derive(Deserialize, Serialize)]
 pub struct Guest<T> {

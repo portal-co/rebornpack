@@ -70,6 +70,7 @@ pub fn do_test(
     m: &mut waffle::Module,
     f: &mut waffle::FunctionBody,
     pass: &mut impl FnMut(
+        &mut Module,
         Func<BoundOp<Canon>, BoundTerm<Canon>, BoundType<Canon>, BoundSelect<Canon>>,
     ) -> anyhow::Result<
         Func<BoundOp<Canon>, BoundTerm<Canon>, BoundType<Canon>, BoundSelect<Canon>>,
@@ -81,7 +82,7 @@ pub fn do_test(
     // eprintln!("{}",f.display("", None));
     let fm = import::import_func(&mut g, &f, &mut import::Normal { fn_map: () })?;
     g.entry = fm[f.entry].unwrap();
-    let mut g = pass(g)?;
+    let mut g = pass(m,g)?;
     // eprintln!(
     //     "{:?}",
     //     g.blocks
@@ -106,6 +107,7 @@ pub fn do_test(
 pub fn test_mod(
     m: &mut Module,
     pass: &mut impl FnMut(
+        &mut Module,
         Func<BoundOp<Canon>, BoundTerm<Canon>, BoundType<Canon>, BoundSelect<Canon>>,
     ) -> anyhow::Result<
         Func<BoundOp<Canon>, BoundTerm<Canon>, BoundType<Canon>, BoundSelect<Canon>>,

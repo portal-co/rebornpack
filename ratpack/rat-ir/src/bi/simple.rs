@@ -187,7 +187,7 @@ impl<
 #[macro_export]
 macro_rules! safe {
     ($a:ident<$($ap:tt),*> from $b:ident<$($bp:tt),*>) => {
-        impl<$($ap),*,$($bp),*,Y: $crate::util::Extract<Y2>,O2: $crate::util::Push<$b<$(bp),*>>,T2,Y2,S2: Default> SimpleOp<$b<$(bp),*>,Y,O2,T2,Y2,S2> for $a<$($ap),*> where $b<$(bp),*>: Clone{
+        impl<$($ap),*,$($bp),*,Y: Clone,O2: $crate::util::Push<$b<$(bp),*>>,T2,Y2,S2: Default> SimpleOp<$b<$(bp),*>,Y,O2,T2,Y2: $crate::util::Push<Y>,S2> for $a<$($ap),*> where $b<$(bp),*>: Clone{
             fn build(
                 &mut self,
                 o: &$b<$(bp),*>,
@@ -203,7 +203,7 @@ macro_rules! safe {
                                 select: S2::default(),
                             })
                             .collect(),
-                        y.extract(),
+                            Y2::push(y.clone()).map_right(|_|()).unwrap_left(),
                         ::std::marker::PhantomData,
                     ));
                     new.blocks[k].insts.push(v);
@@ -213,7 +213,7 @@ macro_rules! safe {
         }
     };
     ($a:ident from $b:ident<$($bp:tt),*>) => {
-        impl<$($bp),*,Y: $crate::util::Extract<Y2>,O2: $crate::util::Push<$b<$(bp),*>>,T2,Y2,S2: Default> SimpleOp<$b<$(bp),*>,Y,O2,T2,Y2,S2> for $a where $b<$(bp),*>: Clone{
+        impl<$($bp),*,Y: Clone,O2: $crate::util::Push<$b<$(bp),*>>,T2,Y2: $crate::util::Push<Y>,S2: Default> SimpleOp<$b<$(bp),*>,Y,O2,T2,Y2,S2> for $a where $b<$(bp),*>: Clone{
             fn build(
                 &mut self,
                 o: &$b<$(bp),*>,
@@ -229,7 +229,7 @@ macro_rules! safe {
                                 select: S2::default(),
                             })
                             .collect(),
-                        y.extract(),
+                            Y2::push(y.clone()).map_right(|_|()).unwrap_left(),
                         ::std::marker::PhantomData,
                     ));
                     new.blocks[k].insts.push(v);
@@ -239,7 +239,7 @@ macro_rules! safe {
         }
     };
     ($a:ident<$($ap:tt),*> from $b:ident) => {
-        impl<$($ap),*,Y: $crate::util::Extract<Y2>,O2: $crate::util::Push<$b>,T2,Y2,S2: Default> SimpleOp<$b,Y,O2,T2,Y2,S2> for $a<$($ap),*> where $b: Clone{
+        impl<$($ap),*,Y: Clone,O2: $crate::util::Push<$b>,T2,Y2: $crate::util::Push<Y>,S2: Default> SimpleOp<$b,Y,O2,T2,Y2,S2> for $a<$($ap),*> where $b: Clone{
             fn build(
                 &mut self,
                 o: &$b,
@@ -256,7 +256,7 @@ macro_rules! safe {
                                 select: S2::default(),
                             })
                             .collect(),
-                        y.extract(),
+                            Y2::push(y.clone()).map_right(|_|()).unwrap_left(),
                         ::std::marker::PhantomData,
                     ));
                     new.blocks[k].insts.push(v);
@@ -267,7 +267,7 @@ macro_rules! safe {
         }
     };
     ($a:ident from $b:ident) => {
-        impl<Y: $crate::util::Extract<Y2>,O2: $crate::util::Push<$b>,T2,Y2,S2: Default> SimpleOp<$b,Y,O2,T2,Y2,S2> for $a where $b: Clone{
+        impl<Y: Clone,O2: $crate::util::Push<$b>,T2,Y2: $crate::util::Push<Y>,S2: Default> SimpleOp<$b,Y,O2,T2,Y2,S2> for $a where $b: Clone{
             fn build(
                 &mut self,
                 o: &$b,
@@ -284,7 +284,7 @@ macro_rules! safe {
                                 select: S2::default(),
                             })
                             .collect(),
-                        y.extract(),
+                        Y2::push(y.clone()).map_right(|_|()).unwrap_left(),
                         ::std::marker::PhantomData,
                     ));
                     new.blocks[k].insts.push(v);

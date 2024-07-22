@@ -145,6 +145,11 @@ impl<O,T,Y,S,A: Push<BlockTarget<O,T,Y,S>>> Bt<O,T,Y,S> for A{
 pub trait Extract<A> {
     fn extract(&self) -> A;
 }
+impl<T: Clone> Extract<Vec<T>> for Vec<T>{
+    fn extract(&self) -> Vec<T> {
+        self.clone()
+    }
+}
 impl<T: Extract<A>, U: Extract<A>, A> Extract<A> for Either<T, U> {
     fn extract(&self) -> A {
         match self {
@@ -156,6 +161,7 @@ impl<T: Extract<A>, U: Extract<A>, A> Extract<A> for Either<T, U> {
 pub trait ExtractIn<C, A> {
     fn extract_in(&self, ctx: &mut C) -> A;
 }
+
 impl<A, C, T: ExtractIn<C, A>, U: ExtractIn<C, A>> ExtractIn<C, A> for Either<T, U> {
     fn extract_in(&self, ctx: &mut C) -> A {
         match self {

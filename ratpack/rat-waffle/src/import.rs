@@ -47,7 +47,7 @@ impl WaffleOp for OpWrapper {
         Self(x.clone())
     }
 }
-impl<O: Push<OpWrapper> + Push<Call<O, T, Y, S>>, T, Y, S> ImportOp<O, T, Y, S>
+impl<O: Push<OpWrapper> + Push<Call<O, T, Y, S>>, T:  Push<WaffleTerm<O, T, Y, S, waffle::Func>>+, Y, S> ImportOp<O, T, Y, S>
     for Normal<PerEntity<waffle::Func, Option<Id<Func<O, T, Y, S>>>>>
 {
     fn op(
@@ -80,7 +80,7 @@ impl<O: Push<OpWrapper> + Push<Call<O, T, Y, S>>, T, Y, S> ImportOp<O, T, Y, S>
         return Ok((v, k));
     }
 }
-impl<O: Push<OpWrapper>, T, Y, S> ImportOp<O, T, Y, S> for Normal<()> {
+impl<O: Push<OpWrapper>, T:  Push<WaffleTerm<O, T, Y, S, waffle::Func>>, Y, S> ImportOp<O, T, Y, S> for Normal<()> {
     fn op(
         &mut self,
         op: &Operator,

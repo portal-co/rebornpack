@@ -20,6 +20,7 @@ pub mod module;
 pub mod transform;
 pub mod util;
 pub mod var;
+pub mod cps;
 #[derive(Clone)]
 pub struct Then<A: ?Sized, B> {
     pub first: Box<A>,
@@ -27,6 +28,7 @@ pub struct Then<A: ?Sized, B> {
 }
 #[derive(Clone)]
 pub struct Unit<A>(pub A);
+
 
 pub trait Builder<O, T, Y, S> {
     type Result;
@@ -139,7 +141,7 @@ impl<O, T, Y, S, A> Builder<O, T, Y, S> for Unit<A> {
     }
 }
 #[derive(Serialize, Deserialize)]
-#[serde(default)]
+#[serde(bound(serialize = "O: Serialize, T: Serialize, Y: Serialize, S: Serialize", deserialize = "O: Deserialize<'de>, T: Deserialize<'de>, Y: Deserialize<'de>, S: Deserialize<'de>"))]
 pub struct Func<O, T, Y, S> {
     pub opts: Arena<Value<O, T, Y, S>>,
     pub blocks: Arena<Block<O, T, Y, S>>,
@@ -666,7 +668,7 @@ where
         self.0.t2s_mut()
     }
 }
-
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct Call<O, T, Y, S> {
     pub func: Id<Func<O, T, Y, S>>,
 }

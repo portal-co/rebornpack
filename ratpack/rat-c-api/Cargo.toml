@@ -1,0 +1,9 @@
+[package]
+name = "rat-c-api"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+id-arena.workspace = true
+rat-debug = { version = "0.1.0", path = "../rat-debug" }
+rat-ir = { version = "0.1.0", path = "../rat-ir" }

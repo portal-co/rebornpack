@@ -367,6 +367,25 @@ pub trait SimpleTerm<O2, T2, Y2, S2, T2B> {
     fn warp(&mut self, t: T2B) -> impl Builder<O2, T2, Y2, S2, Result = T2>;
 }
 
+impl<
+        O2,
+        T2,
+        Y2,
+        S2,
+        Va,
+        Vb,
+        X: Gm<First: SimpleTerm<O2, T2, Y2, S2, Va>, Second: SimpleTerm<O2, T2, Y2, S2, Vb>>,
+    > SimpleTerm<O2, T2, Y2, S2, Either<Va, Vb>> for X
+{
+    fn warp(&mut self, x: Either<Va, Vb>) -> impl Builder<O2, T2, Y2, S2, Result = T2> {
+        match x {
+            Either::Left(a) => Either::Left(self.first().warp(a)),
+            Either::Right(b) => Either::Right(self.second().warp(b))
+        }
+    }
+}
+
+
 pub trait Simple<O, T, Y, S, O2, T2, Y2, S2, T2B>:
     SimpleOp<O, Y, O2, T2, Y2, S2>
     + SimpleSelect<Y, S, O2, T2, Y2, S2>
@@ -391,14 +410,16 @@ impl<
     > Simple<O, T, Y, S, O2, T2, Y2, S2, T2B> for A
 {
 }
+#[repr(transparent)]
 pub struct DoSimple<X> {
-    pub wrapped: Box<X>,
+    pub wrapped: X,
 }
 impl<Y, X: AsMut<Y>> AsMut<Y> for DoSimple<X> {
     fn as_mut(&mut self) -> &mut Y {
-        return self.wrapped.as_mut().as_mut();
+        return self.wrapped.as_mut();
     }
 }
+
 impl<
         O,
         T: SaneTerminator<O, T, Y, S> + NormalTermIn<X, O, T, Y, S, O2, T2, Y2, S2, Then = T2B>,
@@ -477,7 +498,7 @@ impl<
             .map(|a| Ok((a.block, go(state, new, a, ())?)))
             .collect::<anyhow::Result<BTreeMap<_, _>>>()?;
         let n = t.norm(
-            state.tracer.wrapped.as_mut(),
+            &mut state.tracer.wrapped,
             &m,
             &valmap.iter().map(|(a, b)| (*a, **b)).collect(),
         );
@@ -487,3 +508,4 @@ impl<
         Ok(())
     }
 }
+

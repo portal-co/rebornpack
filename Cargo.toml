@@ -1,5 +1,5 @@
 [workspace]
-members=["ratpack/rat-waffle", "ratpack/rat-ir", "ratpack/rat-ast", "ratpack/rat-script", "ratpack/skulk", "ratpack/rat-tiny-js", "ratpack/rat-rust", "ratpack/rat-sleigh", "ratpack/rat-debug","gorf/gorf-core","gorf/gorf-kiselyov","gorf/gorf-gen-core","gorf/gorf-gen-macro","gorf/lambda-rt","gorf/lambda-rt-test","jetski", "isovariant", "ratpack/rat-waffle-test","shellcode/proby", "rave/rave"] # , "trigon/trg-core", "private/cluejme","private/trg-x"
+members=["ratpack/rat-waffle", "ratpack/rat-ir", "ratpack/rat-ast", "ratpack/rat-script", "ratpack/skulk", "ratpack/rat-tiny-js", "ratpack/rat-rust", "ratpack/rat-sleigh", "ratpack/rat-debug","gorf/gorf-core","gorf/gorf-kiselyov","gorf/gorf-gen-core","gorf/gorf-gen-macro","gorf/lambda-rt","gorf/lambda-rt-test","jetski", "isovariant", "ratpack/rat-waffle-test","shellcode/proby", "rave/rave", "more_waffle/tcore", "ratpack/rat-c-api","marl", "ratpack/rat-stackvm"] # , "trigon/trg-core", "private/cluejme","private/trg-x"
 # "axle/axle"
 # "axle/axle-waffle"
 # "axle/axle-ast", 
@@ -15,7 +15,7 @@ portal-pc-waffle = {git="https://github.com/portal-co/waffle-.git",branch="pr/ch
 
 jingle_sleigh={git="https://github.com/toolCHAINZ/jingle.git",branch="main"}
 ax-x86 = {git="https://github.com/portal-co/ax.git",branch="pr/wasi"}
-id-arena = {git="https://github.com/Mossaka/id-arena-fork.git",branch="serialize"}
+id-arena = {git="https://github.com/portal-co/id-arena-fork.git",branch="serialize"}
 hudsucker={git="https://github.com/portal-co/hudsucker.git",branch="pr/as-service"}
 once_map = {git="https://github.com/portal-co/once_map.git",branch="pr/clonable_lazy_map"}
 webvnc={git="https://github.com/portal-co/webgateway.git"}

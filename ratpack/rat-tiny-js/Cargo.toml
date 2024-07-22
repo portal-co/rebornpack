@@ -10,8 +10,12 @@ anyhow.workspace = true
 castaway = "0.2.2"
 either.workspace = true
 id-arena.workspace = true
+proc-macro2 = "1.0.86"
+quote.workspace = true
 rat-ast = { version = "0.1.0", path = "../rat-ast" }
 rat-debug = { version = "0.1.0", path = "../rat-debug" }
 rat-ir = { version = "0.1.0", path = "../rat-ir" }
+replace_with = "0.1.7"
+serde.workspace = true
 swc_core.workspace = true
 swc_ecma_utils.workspace = true

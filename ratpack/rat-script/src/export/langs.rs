@@ -83,8 +83,8 @@ impl CLike for Java {
         Self(format!("l{id}: while(1){{{}}};", self.0))
     }
 }
-impl ScrOp<ECMAScript> for BinOp {
-    fn op(&self, mut args: impl Iterator<Item = ECMAScript>) -> ECMAScript {
+impl<C> ScrOp<C,ECMAScript> for BinOp {
+    fn op(&self, ctx: &mut C, mut args: impl Iterator<Item = ECMAScript>) -> ECMAScript {
         let arg0 = args.next().unwrap();
         let arg1 = args.next().unwrap();
         ECMAScript(match self {
@@ -104,8 +104,8 @@ impl ScrOp<ECMAScript> for BinOp {
         })
     }
 }
-impl ScrOp<ECMAScript> for ObjectOriented {
-    fn op(&self, mut args: impl Iterator<Item = ECMAScript>) -> ECMAScript {
+impl<C> ScrOp<C,ECMAScript> for ObjectOriented {
+    fn op(&self,ctx: &mut C, mut args: impl Iterator<Item = ECMAScript>) -> ECMAScript {
         ECMAScript(match self {
             ObjectOriented::NewObj(m) => format!(
                 "new {m}({})",
@@ -123,8 +123,8 @@ impl ScrOp<ECMAScript> for ObjectOriented {
         })
     }
 }
-impl ScrOp<C> for BinOp {
-    fn op(&self, mut args: impl Iterator<Item = C>) -> C {
+impl<X> ScrOp<X,C> for BinOp {
+    fn op(&self,ctx: &mut X, mut args: impl Iterator<Item = C>) -> C {
         let arg0 = args.next().unwrap();
         let arg1 = args.next().unwrap();
         C(match self {
@@ -144,8 +144,8 @@ impl ScrOp<C> for BinOp {
         })
     }
 }
-impl ScrOp<Java> for BinOp {
-    fn op(&self, mut args: impl Iterator<Item = Java>) -> Java {
+impl<C> ScrOp<C,Java> for BinOp {
+    fn op(&self,ctx: &mut C, mut args: impl Iterator<Item = Java>) -> Java {
         let arg0 = args.next().unwrap();
         let arg1 = args.next().unwrap();
         Java(match self {
@@ -165,8 +165,8 @@ impl ScrOp<Java> for BinOp {
         })
     }
 }
-impl ScrOp<Java> for ObjectOriented {
-    fn op(&self, mut args: impl Iterator<Item = Java>) -> Java {
+impl<C> ScrOp<C,Java> for ObjectOriented {
+    fn op(&self,ctx: &mut C, mut args: impl Iterator<Item = Java>) -> Java {
         Java(match self {
             ObjectOriented::NewObj(m) => format!(
                 "new {m}({})",
@@ -184,15 +184,16 @@ impl ScrOp<Java> for ObjectOriented {
         })
     }
 }
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug,serde::Serialize,serde::Deserialize)]
 pub struct WasmBindgen<X>(pub X);
-impl<X: ScrOp<ECMAScript>> RustOp for WasmBindgen<X> {
+impl<C,X: ScrOp<C,ECMAScript>> RustOp<C> for WasmBindgen<X> {
     fn rust(
         &self,
+        ctx: &mut C,
         args: impl Iterator<Item = proc_macro2::TokenStream>,
     ) -> proc_macro2::TokenStream {
         let args: Vec<_> = args.collect();
-        let js_body = self.0.op(args
+        let js_body = self.0.op(ctx,args
             .iter()
             .enumerate()
             .map(|a| ECMAScript(format!("${}", a.0))));
@@ -240,7 +241,7 @@ impl CLike for Swift {
         Self(format!("l{id}: while(1){{{}}};", self.0))
     }
 }
-impl<C,O: ScrOp<Java>, T, Y, S, W: ExportTerm<ScrCLikeAst<Java>,C, O, T, Y, S>>
+impl<C,O: ScrOp<C,Java>, T, Y, S, W: ExportTerm<ScrCLikeAst<Java>,C, O, T, Y, S>>
     ExportTerm<ScrCLikeAst<Java>,C, O, T, Y, S> for Catch<O, T, Y, S, W>
 {
     fn go(
@@ -268,7 +269,7 @@ impl<C,O: ScrOp<Java>, T, Y, S, W: ExportTerm<ScrCLikeAst<Java>,C, O, T, Y, S>>
         ))
     }
 }
-impl<C,O: ScrOp<ECMAScript>, T, Y, S, W: ExportTerm<ScrCLikeAst<ECMAScript>,C, O, T, Y, S>>
+impl<C,O: ScrOp<C,ECMAScript>, T, Y, S, W: ExportTerm<ScrCLikeAst<ECMAScript>,C, O, T, Y, S>>
     ExportTerm<ScrCLikeAst<ECMAScript>,C, O, T, Y, S> for Catch<O, T, Y, S, W>
 {
     fn go(
@@ -296,7 +297,7 @@ impl<C,O: ScrOp<ECMAScript>, T, Y, S, W: ExportTerm<ScrCLikeAst<ECMAScript>,C, O
         ))
     }
 }
-impl<X,O: ScrOp<C>, T, Y, S, W: ExportTerm<ScrCLikeAst<C>,X, O, T, Y, S>>
+impl<X,O: ScrOp<X,C>, T, Y, S, W: ExportTerm<ScrCLikeAst<C>,X, O, T, Y, S>>
     ExportTerm<ScrCLikeAst<C>,X, O, T, Y, S> for Catch<O, T, Y, S, W>
 {
     fn go(

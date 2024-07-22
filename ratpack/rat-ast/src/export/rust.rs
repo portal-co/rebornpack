@@ -9,80 +9,80 @@ use rat_ir::{
 use syn::{Ident, Index, Lifetime};
 
 use super::{CffAst, ExportAst, ExportTerm, ReloopAst};
-impl<O, T, Y, S> RustOp for Call<O, T, Y, S> {
-    fn rust(&self, args: impl Iterator<Item = TokenStream>) -> TokenStream {
+impl<C,O, T, Y, S> RustOp<C> for Call<O, T, Y, S> {
+    fn rust(&self,ctx: &mut C, args: impl Iterator<Item = TokenStream>) -> TokenStream {
         let t = format_ident!("_{}", self.func.index());
         quote! {
             crate::palette::#t(#(#args),*)
         }
     }
 }
-pub trait Rust {
-    fn rust(&self) -> TokenStream;
+pub trait Rust<C> {
+    fn rust(&self, ctx: &mut C) -> TokenStream;
 }
-pub trait RustSel {
-    fn rust(&self, a: &TokenStream) -> TokenStream;
+pub trait RustSel<C> {
+    fn rust(&self, a: &TokenStream, ctx: &mut C) -> TokenStream;
 }
 pub struct Move {}
-impl RustSel for Move {
-    fn rust(&self, a: &TokenStream) -> TokenStream {
+impl<C> RustSel<C> for Move {
+    fn rust(&self, a: &TokenStream, ctx: &mut C) -> TokenStream {
         quote! {
             std::mem::replace(&mut #a,Default::default())
         }
     }
 }
 pub struct Clone_ {}
-impl RustSel for Clone_ {
-    fn rust(&self, a: &TokenStream) -> TokenStream {
+impl<C> RustSel<C> for Clone_ {
+    fn rust(&self, a: &TokenStream, ctx: &mut C) -> TokenStream {
         quote! {
             #a.clone()
         }
     }
 }
-pub trait RustOp {
-    fn rust(&self, args: impl Iterator<Item = TokenStream>) -> TokenStream;
+pub trait RustOp<C> {
+    fn rust(&self,ctx: &mut C, args: impl Iterator<Item = TokenStream>) -> TokenStream;
 }
-impl<B: Bound> RustOp for BoundOp<B>
+impl<B: Bound,C> RustOp<C> for BoundOp<B>
 where
-    B::O<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: RustOp,
+    B::O<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: RustOp<C>,
 {
-    fn rust(&self, args: impl Iterator<Item = TokenStream>) -> TokenStream {
-        self.0.rust(args)
+    fn rust(&self,ctx: &mut C, args: impl Iterator<Item = TokenStream>) -> TokenStream {
+        self.0.rust(ctx,args)
     }
 }
-impl<B: Bound> Rust for BoundType<B>
+impl<B: Bound,C> Rust<C> for BoundType<B>
 where
-    B::Y<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: Rust,
+    B::Y<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: Rust<C>,
 {
-    fn rust(&self) -> TokenStream {
-        self.0.rust()
+    fn rust(&self, ctx: &mut C) -> TokenStream {
+        self.0.rust(ctx)
     }
 }
-impl<B: Bound> RustSel for BoundSelect<B>
+impl<B: Bound,C> RustSel<C> for BoundSelect<B>
 where
-    B::S<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: RustSel,
+    B::S<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: RustSel<C>,
 {
-    fn rust(&self, a: &TokenStream) -> TokenStream {
-        self.0.rust(a)
+    fn rust(&self, a: &TokenStream, ctx: &mut C) -> TokenStream {
+        self.0.rust(a,ctx)
     }
 }
-impl<A: Rust, B: Rust> Rust for Either<A, B> {
-    fn rust(&self) -> TokenStream {
+impl<C,A: Rust<C>, B: Rust<C>> Rust<C> for Either<A, B> {
+    fn rust(&self, ctx: &mut C) -> TokenStream {
         match self {
-            Either::Left(a) => a.rust(),
-            Either::Right(b) => b.rust(),
+            Either::Left(a) => a.rust(ctx),
+            Either::Right(b) => b.rust(ctx),
         }
     }
 }
-impl<A: RustOp, B: RustOp> RustOp for Either<A, B> {
-    fn rust(&self, args: impl Iterator<Item = TokenStream>) -> TokenStream {
+impl<C,A: RustOp<C>, B: RustOp<C>> RustOp<C> for Either<A, B> {
+    fn rust(&self,ctx: &mut C, args: impl Iterator<Item = TokenStream>) -> TokenStream {
         match self {
-            Either::Left(a) => a.rust(args),
-            Either::Right(b) => b.rust(args),
+            Either::Left(a) => a.rust(ctx,args),
+            Either::Right(b) => b.rust(ctx,args),
         }
     }
 }
-impl<C,O: RustOp, T, Y: Rust, S: RustSel> ExportAst<C,O, T, S, Y> for TokenStream {
+impl<C,O: RustOp<C>, T, Y: Rust<C>, S: RustSel<C>> ExportAst<C,O, T, S, Y> for TokenStream {
     type Var = String;
 
     fn get(ctx: &mut C,var: Self::Var, y: &Y) -> Self {
@@ -103,7 +103,7 @@ impl<C,O: RustOp, T, Y: Rust, S: RustSel> ExportAst<C,O, T, S, Y> for TokenStrea
     }
 
     fn select(&self,ctx: &mut C, s: &S) -> Self {
-        s.rust(self)
+        s.rust(self,ctx)
     }
 
     fn append(&mut self,ctx: &mut C, i: impl Iterator<Item = Self>) {
@@ -117,11 +117,11 @@ impl<C,O: RustOp, T, Y: Rust, S: RustSel> ExportAst<C,O, T, S, Y> for TokenStrea
     }
 
     fn op(ctx: &mut C,o: &O, args: &[Self]) -> Self {
-        let o = o.rust(args.iter().cloned());
+        let o = o.rust(ctx,args.iter().cloned());
         return o;
     }
 }
-impl<C,O: RustOp, T, Y: Rust, S: RustSel> CffAst<C,O, T, S, Y> for TokenStream {
+impl<C,O: RustOp<C>, T, Y: Rust<C>, S: RustSel<C>> CffAst<C,O, T, S, Y> for TokenStream {
     fn br_id(ctx: &mut C,a: usize) -> Self {
         quote! {__id = #a; break 'main;}
     }
@@ -148,7 +148,7 @@ impl<C,O: RustOp, T, Y: Rust, S: RustSel> CffAst<C,O, T, S, Y> for TokenStream {
         quote! {__id = #a}
     }
 }
-impl<C,O: RustOp, T, Y: Rust, S: RustSel> ReloopAst<C,O, T, S, Y> for TokenStream {
+impl<C,O: RustOp<C>, T, Y: Rust<C>, S: RustSel<C>> ReloopAst<C,O, T, S, Y> for TokenStream {
     fn r#break(ctx: &mut C,id: u16) -> Self {
         let id = Lifetime::new(&format!("l{id}"), Span::call_site());
         quote! {
@@ -172,7 +172,7 @@ impl<C,O: RustOp, T, Y: Rust, S: RustSel> ReloopAst<C,O, T, S, Y> for TokenStrea
         }
     }
 }
-impl<C,O: RustOp, T, Y: Rust, S: RustSel, W: ExportTerm<TokenStream,C, O, T, Y, S>>
+impl<C,O: RustOp<C>, T, Y: Rust<C>, S: RustSel<C>, W: ExportTerm<TokenStream,C, O, T, Y, S>>
     ExportTerm<TokenStream,C, O, T, Y, S> for If<O, T, Y, S, W>
 {
     fn go(
@@ -183,7 +183,7 @@ impl<C,O: RustOp, T, Y: Rust, S: RustSel, W: ExportTerm<TokenStream,C, O, T, Y, 
         body: TokenStream,
     ) -> anyhow::Result<TokenStream> {
         let i = Ident::new(&format!("ssa{}", self.val.value.index()), Span::call_site());
-        let se = self.val.select.rust(&quote! {#i});
+        let se = self.val.select.rust(&quote! {#i},ctx);
         // let i = quote!{
         //     #i #se
         // };
@@ -202,7 +202,7 @@ impl<C,O: RustOp, T, Y: Rust, S: RustSel, W: ExportTerm<TokenStream,C, O, T, Y, 
         });
     }
 }
-pub trait RustCatch<C,O: RustOp, T, Y: Rust, S: RustSel>:
+pub trait RustCatch<C,O: RustOp<C>, T, Y: Rust<C>, S: RustSel<C>>:
     ExportTerm<TokenStream,C, O, T, Y, S>
 {
     fn bundle(&self,ctx: &mut C, body: TokenStream) -> TokenStream;
@@ -214,7 +214,7 @@ pub trait RustCatch<C,O: RustOp, T, Y: Rust, S: RustSel>:
         f: &rat_ir::Func<O, T, Y, S>,
     ) -> anyhow::Result<TokenStream>;
 }
-impl<C,O: RustOp, T, Y: Rust, S: RustSel, W: RustCatch<C,O, T, Y, S>>
+impl<C,O: RustOp<C>, T, Y: Rust<C>, S: RustSel<C>, W: RustCatch<C,O, T, Y, S>>
     ExportTerm<TokenStream,C, O, T, Y, S> for Catch<O, T, Y, S, W>
 {
     fn go(
@@ -257,7 +257,7 @@ impl<C,O: RustOp, T, Y: Rust, S: RustSel, W: RustCatch<C,O, T, Y, S>>
         })
     }
 }
-impl<C,O: RustOp, T, Y: Rust + Clone, S: RustSel + Clone> RustCatch<C,O, T, Y, S>
+impl<C,O: RustOp<C>, T, Y: Rust<C> + Clone, S: RustSel<C> + Clone> RustCatch<C,O, T, Y, S>
     for BlockTarget<O, T, Y, S>
 {
     fn bundle(&self,ctx: &mut C, body: TokenStream) -> TokenStream {
@@ -286,7 +286,7 @@ impl<C,O: RustOp, T, Y: Rust + Clone, S: RustSel + Clone> RustCatch<C,O, T, Y, S
             let i = Index::from(i);
             return a2.select.rust(&quote! {
                 #a.#i
-            });
+            },ctx);
         }));
         let mut r = quote! {};
         for x in before.iter().zip(tys).enumerate().map(|(i, (x, y))| {
@@ -308,10 +308,10 @@ impl<C,O: RustOp, T, Y: Rust + Clone, S: RustSel + Clone> RustCatch<C,O, T, Y, S
         })
     }
 }
-impl<C,O: RustOp, T, Y: Rust + Clone, S: RustSel + Clone, W: RustCatch<C,O,T,Y,S>> RustCatch<C,O,T,Y,S> for If<O,T,Y,S,W>{
+impl<C,O: RustOp<C>, T, Y: Rust<C> + Clone, S: RustSel<C> + Clone, W: RustCatch<C,O,T,Y,S>> RustCatch<C,O,T,Y,S> for If<O,T,Y,S,W>{
     fn bundle(&self,ctx: &mut C, body: TokenStream) -> TokenStream {
         let i = Ident::new(&format!("ssa{}", self.val.value.index()), Span::call_site());
-        let se = self.val.select.rust(&quote! {#i});
+        let se = self.val.select.rust(&quote! {#i},ctx);
         // let i = quote!{
         //     #i #se
         // };

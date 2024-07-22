@@ -8,9 +8,10 @@ use rat_ast::export::rust::{RustOp, RustSel};
 use rat_ir::{no_push, Func};
 
 pub struct Await {}
-impl RustOp for Await {
+impl<C> RustOp<C> for Await {
     fn rust(
         &self,
+        ctx: &mut C,
         mut args: impl Iterator<Item = proc_macro2::TokenStream>,
     ) -> proc_macro2::TokenStream {
         let arg = args.next().unwrap();
@@ -23,9 +24,10 @@ no_push!(
     type Await;
 );
 pub struct SelfCode {}
-impl RustOp for SelfCode {
+impl<C> RustOp<C> for SelfCode {
     fn rust(
         &self,
+        ctx: &mut C,
         args: impl Iterator<Item = proc_macro2::TokenStream>,
     ) -> proc_macro2::TokenStream {
         quote! {
@@ -39,9 +41,10 @@ no_push!(
 pub struct Baked<T> {
     pub baked: T,
 }
-impl<T: Bake> RustOp for Baked<T> {
+impl<C,T: Bake> RustOp<C> for Baked<T> {
     fn rust(
         &self,
+        ctx: &mut C,
         args: impl Iterator<Item = proc_macro2::TokenStream>,
     ) -> proc_macro2::TokenStream {
         self.baked.bake(&Default::default())
@@ -50,16 +53,16 @@ impl<T: Bake> RustOp for Baked<T> {
 no_push!(
     type Baked<T>;
 );
-pub struct Bind<O, T, Y, S, C,R> {
+pub struct Bind<O, T, Y, S, C, R> {
     pub func: Id<Func<O, T, Y, S>>,
     pub cache_num_args: C,
     pub root: R,
 }
 no_push!(
-    type Bind<O, T, Y, S,C,R>;
+    type Bind<O, T, Y, S, C, R>;
 );
-impl<O, T, Y, S,R: ToTokens> RustOp for Bind<O, T, Y, S, usize,R> {
-    fn rust(&self, args: impl Iterator<Item = TokenStream>) -> TokenStream {
+impl<C, O, T, Y, S, R: ToTokens> RustOp<C> for Bind<O, T, Y, S, usize, R> {
+    fn rust(&self,ctx: &mut C, args: impl Iterator<Item = TokenStream>) -> TokenStream {
         let root = &self.root;
         let t = format_ident!("_{}", self.func.index());
         let mut x = quote! {};
@@ -95,8 +98,8 @@ pub struct Stringify {}
 no_push!(
     type Stringify;
 );
-impl RustSel for Stringify {
-    fn rust(&self, a: &TokenStream) -> TokenStream {
+impl<C> RustSel<C> for Stringify {
+    fn rust(&self, a: &TokenStream, ctx: &mut C) -> TokenStream {
         quote! {
             format!("{}",#a)
         }

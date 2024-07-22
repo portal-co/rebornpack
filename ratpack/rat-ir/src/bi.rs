@@ -157,7 +157,7 @@ pub fn trace_func<O, T, Y, S, O2, T2: Default, Y2, S2, C: Tracer<O, T, Y, S, O2,
     tracer: &mut C,
     old: &Func<O, T, Y, S>,
     new: &mut Func<O2, T2, Y2, S2>,
-    // k: Id<Block<O, T, Y, S>>,
+    k: Id<Block<O, T, Y, S>>,
     i: C::Instance,
 ) -> anyhow::Result<()> {
     return replace_with::replace_with_or_abort_and_return(tracer, move|tracer|{
@@ -166,7 +166,7 @@ pub fn trace_func<O, T, Y, S, O2, T2: Default, Y2, S2, C: Tracer<O, T, Y, S, O2,
             tracer,
             in_map: BTreeMap::new(),
         };
-        let k = match trace_block(&mut state, old, new, old.entry, i) {
+        let k = match trace_block(&mut state, old, new, k, i) {
             Ok(a) => a,
             Err(e) => return (Err(e), state.tracer),
         };

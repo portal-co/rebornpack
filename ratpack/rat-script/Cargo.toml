@@ -20,3 +20,4 @@ relooper = "0.1.0"
 proc-macro2.workspace = true
 quote.workspace = true
 syn.workspace = true
+serde.workspace = true

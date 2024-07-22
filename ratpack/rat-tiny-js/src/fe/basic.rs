@@ -3,7 +3,7 @@ use std::iter::{empty, once};
 use either::Either;
 use rat_ir::{Bound, SaneTerminator};
 
-use crate::{BasicTinyOp, BasicTinyTerm};
+use crate::fe::{BasicTinyOp, BasicTinyTerm};
 
 impl<O, T, Y, S> SaneTerminator<O, T, Y, S> for BasicTinyTerm<O, T, Y, S> {
     fn uses<'a>(&'a self) -> impl Iterator<Item = &'a rat_ir::Use<O, T, Y, S>> + 'a

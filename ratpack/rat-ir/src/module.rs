@@ -1,6 +1,7 @@
 use std::{collections::BTreeMap, marker::PhantomData};
 
 use id_arena::{Arena, Id};
+use serde::{Deserialize, Serialize};
 
 use crate::{
     bi::{
@@ -13,7 +14,9 @@ use crate::{
     util::{Extract, ExtractIn, PerID, Push},
     Block, BlockTarget, Bound, Call, Func, Use, Value,
 };
+pub mod cps;
 // pub mod bi;
+#[derive(Serialize,Deserialize)]
 pub struct Module<O, T, Y, S, D> {
     pub funcs: Arena<Func<O, T, Y, S>>,
     pub data: Arena<D>,
@@ -158,17 +161,23 @@ pub struct ModCtx<O, T, Y, S, D, O2, T2, Y2, S2, D2, C> {
     pub data: PerID<D, Option<Id<D2>>>,
     pub wrapped: C,
 }
+impl<O,T,Y,S,D,O2,T2,Y2,S2,D2,C> HasModuleFuncs<O,T,Y,S,O2,T2,Y2,S2> for ModCtx<O,T,Y,S,D,O2,T2,Y2,S2,D2,C>{
+    fn funcs(&self) -> &PerID<Func<O, T, Y, S>, Option<Id<Func<O2, T2, Y2, S2>>>> {
+        return &self.funcs
+    }
+}
 pub fn transform_mod<O, T, Y, S, D, O2, T2: Default, Y2, S2, D2, C>(
     ctx: C,
     mut go: impl FnMut(
         &mut Func<O, T, Y, S>,
+        &mut Module<O2,T2,Y2,S2,D2>,
         &mut ModCtx<O, T, Y, S, D, O2, T2, Y2, S2, D2, C>,
     ) -> anyhow::Result<Func<O2, T2, Y2, S2>>,
     mut d: impl FnMut(&D) -> anyhow::Result<D2>,
     module: &mut Module<O, T, Y, S, D>,
     n: &mut Module<O2, T2, Y2, S2, D2>,
 ) -> anyhow::Result<ModCtx<O, T, Y, S, D, O2, T2, Y2, S2, D2, C>> {
-    let mut n = Module::default();
+    // let mut n = Module::default();
     let mut a = PerID::default();
     for (i, j) in module.funcs.iter() {
         a[i] = Some(n.funcs.alloc(Default::default()))
@@ -183,7 +192,7 @@ pub fn transform_mod<O, T, Y, S, D, O2, T2: Default, Y2, S2, D2, C>(
         data: b,
     };
     for (i, j) in module.funcs.iter_mut() {
-        let f = go(j, &mut c)?;
+        let f = go(j,&mut *n, &mut c)?;
         n.funcs[c.funcs[i].as_ref().copied().unwrap()] = f;
     }
     return Ok(c);
@@ -195,6 +204,7 @@ impl<O, T, Y, S, O2, T2, S2, Y2, C: HasModuleFuncs<O, T, Y, S, O2, T2, Y2, S2>>
         return ctx.funcs()[*self].as_ref().cloned().unwrap();
     }
 }
+#[derive(serde::Serialize, serde::Deserialize)]
 pub struct TailCall<O, T, Y, S> {
     pub func: Id<Func<O, T, Y, S>>,
     pub params: Vec<Use<O, T, Y, S>>,

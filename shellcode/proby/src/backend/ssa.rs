@@ -11,6 +11,18 @@ pub mod backend;
 pub mod map;
 pub mod rat;
 pub mod rat_fe;
+#[derive(Clone,Debug,Hash,PartialEq, Eq,Serialize,Deserialize)]
+pub struct Load{
+    pub size: Size
+}
+#[derive(Clone,Debug,Hash,PartialEq, Eq,Serialize,Deserialize)]
+pub struct Store{
+    pub size: Size
+}
+#[derive(Clone,Debug,Hash,PartialEq, Eq,Serialize,Deserialize)]
+pub struct Alloca{
+
+}
 use std::hash::Hash;
 pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
     let mut s = DefaultHasher::new();

@@ -1,8 +1,11 @@
 use anyhow::Context;
 use either::Either;
+use rat_ir::{util::Push, Builder, Unit, Use};
 use waffle::{
     Block, ExportKind, FunctionBody, ImportKind, Memory, Module, Operator, Type, Value, ValueDef,
 };
+
+use crate::{import::WaffleTerm, OpWrapper};
 // pub fn fd_read(m:&Module, o: &Operator) -> Option<waffle::Func>{
 //     let Operator::Call { function_index } = o else{
 //         return None;
@@ -15,6 +18,7 @@ use waffle::{
 //     };
 //     return None;
 // }
+
 pub fn memory(m: &Module) -> Option<Memory> {
     let mut mem = m
         .exports
@@ -295,11 +299,15 @@ impl Mallocator for Normal {
         Ok(())
     }
 }
-pub fn gather_mallocator(m: &mut Module, f: &mut FunctionBody,b: Block) -> anyhow::Result<Box<dyn Mallocator>>{
-    if let Ok(x) = Brotli::new(m, f, b){
+pub fn gather_mallocator(
+    m: &mut Module,
+    f: &mut FunctionBody,
+    b: Block,
+) -> anyhow::Result<Box<dyn Mallocator>> {
+    if let Ok(x) = Normal::new(m, f, b) {
         return Ok(Box::new(x));
     }
-    if let Ok(x) = Normal::new(m, f, b){
+    if let Ok(x) = Brotli::new(m, f, b) {
         return Ok(Box::new(x));
     }
     anyhow::bail!("mallocator not found")

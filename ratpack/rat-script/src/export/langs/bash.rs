@@ -6,7 +6,7 @@ use crate::script;
 use super::{CLike, ScrOp, Script};
 
 script!(Bash);
-impl<C,O: ScrOp<Bash>,T,Y,S> ExportAst<C,O,T,Y,S> for Bash{
+impl<C,O: ScrOp<C,Bash>,T,Y,S> ExportAst<C,O,T,Y,S> for Bash{
     type Var = String;
 
     fn get(ctx: &mut C,var: Self::Var, y: &S) -> Self {
@@ -32,6 +32,6 @@ impl<C,O: ScrOp<Bash>,T,Y,S> ExportAst<C,O,T,Y,S> for Bash{
     }
 
     fn op(ctx: &mut C,o: &O, args: &[Self]) -> Self {
-        return o.op(args.iter().cloned());
+        return o.op(ctx,args.iter().cloned());
     }
 }

@@ -4,6 +4,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
+use bytes::Bytes;
 use either::Either;
 use id_arena::Id;
 use serde::{Deserialize, Serialize};
@@ -76,7 +77,7 @@ pub enum BinOp {
     ShrS,
     ShrU,
 }
-#[derive(Clone)]
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct If<O, T, Y, S, W> {
     pub val: Use<O, T, Y, S>,
     pub then: W,
@@ -234,6 +235,7 @@ no_push!(
 no_push!(
     type Option<T>;
 );
+#[derive(Clone,Serialize,Deserialize)]
 pub struct DropGuest<Y> {
     pub ty: Y
 }
@@ -245,7 +247,8 @@ no_push!(type u32;);
 no_push!(type u16;);
 no_push!(type u8;);
 no_push!(type usize;);
-
+no_push!(type Bytes;);
+#[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Catch<O, T, Y, S, W> {
     pub wrapped: W,
     pub catch: Option<BlockTarget<O, T, Y, S>>,

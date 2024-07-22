@@ -8,6 +8,7 @@ use rat_ast::export::rust::{Rust, RustOp};
 use rat_ir::{
     bi::license::Taint, no_push, util::Push, BoundOp, BoundSelect, BoundTerm, BoundType, Func,
 };
+use serde::{Deserialize, Serialize};
 use syn::Ident;
 use waffle::{util::new_sig, FunctionBody, MemoryArg, Module, Operator, SignatureData};
 // pub mod rat {
@@ -21,10 +22,10 @@ use waffle::{util::new_sig, FunctionBody, MemoryArg, Module, Operator, Signature
 // pub static RT: Lazy<Option<rat::waffle::rt::Rt>> =
 //     Lazy::new(|| rat::waffle::rt::Rt::decode(&include_bytes!(env!("RW_RT"))[..]).ok());
 
+pub mod detect;
 pub mod export;
 pub mod import;
 pub mod wars;
-pub mod detect;
 
 #[cfg(test)]
 mod tests {
@@ -65,13 +66,22 @@ impl Taint for OpWrapper {
         };
     }
 }
-pub fn do_test(m: &mut waffle::Module, f: &mut waffle::FunctionBody) -> anyhow::Result<()> {
+pub fn do_test(
+    m: &mut waffle::Module,
+    f: &mut waffle::FunctionBody,
+    pass: &mut impl FnMut(
+        Func<BoundOp<Canon>, BoundTerm<Canon>, BoundType<Canon>, BoundSelect<Canon>>,
+    ) -> anyhow::Result<
+        Func<BoundOp<Canon>, BoundTerm<Canon>, BoundType<Canon>, BoundSelect<Canon>>,
+    >,
+) -> anyhow::Result<()> {
     let mut g: Func<BoundOp<Canon>, BoundTerm<Canon>, BoundType<Canon>, BoundSelect<Canon>> =
         Default::default();
     f.convert_to_max_ssa(None);
     // eprintln!("{}",f.display("", None));
     let fm = import::import_func(&mut g, &f, &mut import::Normal { fn_map: () })?;
     g.entry = fm[f.entry].unwrap();
+    let mut g = pass(g)?;
     // eprintln!(
     //     "{:?}",
     //     g.blocks
@@ -90,12 +100,20 @@ pub fn do_test(m: &mut waffle::Module, f: &mut waffle::FunctionBody) -> anyhow::
     rat_ir::maxssa::maxssa(&mut g);
     export::export_func_seal(&mut (), m, &mut new, &g)?;
     *f = new;
-        // eprintln!("{}",f.display("", None));
+    // eprintln!("{}",f.display("", None));
     Ok(())
 }
-pub fn test_mod(m: &mut Module) -> anyhow::Result<()> {
-    return m.try_take_per_func_body(do_test);
+pub fn test_mod(
+    m: &mut Module,
+    pass: &mut impl FnMut(
+        Func<BoundOp<Canon>, BoundTerm<Canon>, BoundType<Canon>, BoundSelect<Canon>>,
+    ) -> anyhow::Result<
+        Func<BoundOp<Canon>, BoundTerm<Canon>, BoundType<Canon>, BoundSelect<Canon>>,
+    >,
+) -> anyhow::Result<()> {
+    return m.try_take_per_func_body(|m, f| do_test(m, f, pass));
 }
+#[derive(Deserialize, Serialize)]
 pub struct Guest<T> {
     pub wrapped: T,
     pub rt: String,
@@ -111,21 +129,26 @@ impl<C: 'static, T: Push<C> + 'static> Push<C> for Guest<T> {
         }
     }
 }
+#[derive(Deserialize, Serialize)]
 pub struct Host<T> {
     pub wrapped: T,
-    pub rt: String,
 }
 impl<C: 'static, T: Push<C> + 'static> Push<C> for Host<T> {
     fn push(b: C) -> either::Either<Self, C> {
         match castaway::cast!(b, Host<T>) {
             Ok(a) => either::Either::Left(a),
-            Err(b) => T::push(b).map_left(|a| Host {
-                wrapped: a,
-                rt: "FILLME!$".to_owned(),
-            }),
+            Err(b) => T::push(b).map_left(|a| Host { wrapped: a }),
         }
     }
 }
-pub struct WasmInfer{
-    
+pub struct WasmInfer {}
+pub trait CpsBuilder {
+    type Result;
+    fn go<U>(
+        &mut self,
+        m: &mut waffle::Module,
+        f: &mut FunctionBody,
+        k: waffle::Block,
+        next: impl FnMut(Self::Result, &mut waffle::Module, &mut FunctionBody, waffle::Block) -> U,
+    ) -> impl Iterator<Item = U>;
 }

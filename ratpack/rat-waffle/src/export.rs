@@ -1,5 +1,11 @@
-use std::sync::{atomic::AtomicBool, Mutex};
+use std::{
+    collections::BTreeMap,
+    iter::empty,
+    sync::{atomic::AtomicBool, Mutex, OnceLock},
+};
 
+use anyhow::Context;
+use bytes::Bytes;
 use either::Either;
 use id_arena::Id;
 use once_cell::sync::Lazy;
@@ -13,12 +19,18 @@ use rat_ir::{
     util::{BinOp, ExtractIn, PerID},
     Block, BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Call, Func,
 };
+use serde::{Deserialize, Serialize};
+use trie_rs::map::Trie;
 use waffle::{
-    entity::EntityRef, util::new_sig, FunctionBody, Import, ImportKind, Module, Operator,
-    SignatureData, Value, ValueDef,
+    entity::EntityRef, util::new_sig, ExportKind, FunctionBody, Import, ImportKind, MemoryData,
+    MemorySegment, Module, Operator, SignatureData, Value, ValueDef,
 };
 
-use crate::{detect::add_op, import::WaffleTerm, OpWrapper};
+use crate::{
+    detect::{add_op, Mallocator},
+    import::WaffleTerm,
+    OpWrapper,
+};
 pub trait WaffleExtra<T>: Clone {
     fn waffle(&self, m: &mut Module) -> T;
 }
@@ -51,7 +63,7 @@ impl<T: WaffleExtra<Vec<U>>, U> WaffleExtra<Vec<U>> for Vec<T> {
         self.iter().flat_map(|x| x.waffle(m)).collect()
     }
 }
-#[derive(Clone)]
+#[derive(Clone, Deserialize, Serialize)]
 pub struct TypedFunref<P, R> {
     pub params: P,
     pub returns: R,
@@ -112,6 +124,70 @@ impl<O, T, Y, S, C> ExportOp<O, T, Y, S, C> for OpWrapper {
     ) -> anyhow::Result<(Vec<waffle::Value>, waffle::Block)> {
         return <waffle::Operator as ExportOp<O, T, Y, S, C>>::export(
             &self.0, ctx, m, target, wb, args, types,
+        );
+    }
+}
+impl<O, T, Y, S, C> ExportOp<O, T, Y, S, C> for Bytes {
+    fn export(
+        &self,
+        ctx: &mut C,
+        m: &mut Module,
+        target: &mut FunctionBody,
+        wb: waffle::Block,
+        args: Vec<waffle::Value>,
+        types: &[waffle::Type],
+    ) -> anyhow::Result<(Vec<waffle::Value>, waffle::Block)> {
+        let x = m
+            .exports
+            .iter()
+            .find_map(|x| {
+                if x.name != "memory" {
+                    return None;
+                };
+                let ExportKind::Memory(m) = &x.kind else {
+                    return None;
+                };
+                return Some(*m);
+            })
+            .context("in getting the memory")?;
+        let l = (self.len() + 65535) / 65536;
+        let mem = m.memories.push(MemoryData {
+            initial_pages: l,
+            maximum_pages: Some(l),
+            segments: vec![MemorySegment {
+                offset: 0,
+                data: self.to_vec(),
+            }],
+            memory64: false,
+            shared: false,
+        });
+        let a = add_op(
+            target,
+            &[],
+            &[waffle::Type::I32],
+            Operator::I32Const { value: 0 },
+        );
+        target.append_to_block(wb, a);
+        let b = add_op(
+            target,
+            &[],
+            &[waffle::Type::I32],
+            Operator::I32Const {
+                value: self.len() as u32,
+            },
+        );
+        target.append_to_block(wb, b);
+        return <waffle::Operator as ExportOp<O, T, Y, S, C>>::export(
+            &Operator::MemoryCopy {
+                dst_mem: x,
+                src_mem: mem,
+            },
+            ctx,
+            m,
+            target,
+            wb,
+            vec![args[0], a, b],
+            types,
         );
     }
 }
@@ -208,6 +284,7 @@ pub fn results_ref_2(f: &mut FunctionBody, c: Value) -> Vec<Value> {
 
     return v;
 }
+
 impl<O, T, Y, S, C> ExportOp<O, T, Y, S, C> for waffle::Operator {
     fn export(
         &self,
@@ -218,12 +295,6 @@ impl<O, T, Y, S, C> ExportOp<O, T, Y, S, C> for waffle::Operator {
         mut args: Vec<waffle::Value>,
         types: &[waffle::Type],
     ) -> anyhow::Result<(Vec<waffle::Value>, waffle::Block)> {
-        static LOCK: Lazy<Mutex<u64>> = Lazy::new(|| Mutex::new(rand::random()));
-        if let Ok(uid) = LOCK.try_lock() {
-            if m.funcs.len() > 32 {
-                
-            }
-        }
         // LOCK.fetch_xor(true, std::sync::atomic::Ordering::SeqCst);
         // let args = target.arg_pool.from_iter(args.iter().cloned());
         // let tys = target.type_pool.from_iter(types.iter().cloned());
@@ -233,9 +304,6 @@ impl<O, T, Y, S, C> ExportOp<O, T, Y, S, C> for waffle::Operator {
         let v = add_op(target, &args, &types, self.clone());
         target.append_to_block(wb, v);
         let r = results_ref_2(target, v);
-        if let Ok(_) = LOCK.try_lock() {
-            if m.funcs.len() > 32 {}
-        }
         return Ok((r, wb));
     }
 }

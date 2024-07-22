@@ -2,22 +2,35 @@ use std::{borrow::Cow, collections::BTreeMap, iter::once, marker::PhantomData};
 
 use id_arena::Id;
 use rat_ir::{
-    no_push, util::{BinOp, If, PerID, Push}, BlockTarget, Use
+    no_push,
+    util::{BinOp, If, PerID, Push},
+    BlockTarget, Use,
 };
 
 use crate::backend::{CondType, Plat};
 
 use super::{
     rat::{Call, Fptr},
-    Target,
+    Alloca, Load, Store, Target,
 };
 #[derive(Clone)]
 #[repr(transparent)]
-pub struct Data(pub Cow<'static,[u8]>);
-no_push!(type Data;);
+pub struct Data(pub Cow<'static, [u8]>);
+no_push!(
+    type Data;
+);
 pub fn copy_block<
     C,
-    O: Push<BinOp> + Push<Fptr<String>> + Push<Call> + Push<u64> + Push<CondType> + Push<Plat> + Push<Data>,
+    O: Push<BinOp>
+        + Push<Fptr<String>>
+        + Push<Call>
+        + Push<u64>
+        + Push<CondType>
+        + Push<Plat>
+        + Push<Data>
+        + Push<Alloca>
+        + Push<Load>
+        + Push<Store>,
     T: Push<BlockTarget<O, T, Y, S>> + Push<If<O, T, Y, S, BlockTarget<O, T, Y, S>>>,
     Y: Default + Clone,
     S: Default,
@@ -101,9 +114,52 @@ pub fn copy_block<
                     new.blocks[tk].insts.push(v);
                     v
                 }
-                super::Instr::Load(_, _) => todo!(),
-                super::Instr::Store(_, _, _) => todo!(),
-                super::Instr::Alloca(_) => todo!(),
+                super::Instr::Load(a, s) => {
+                    let r = vec![a]
+                        .into_iter()
+                        .filter_map(|x| valmap.get(x))
+                        .copied()
+                        .map(|a| Use {
+                            value: a,
+                            select: S::default(),
+                        })
+                        .collect::<Vec<_>>();
+                    let o = O::push(Load { size: *s }).map_right(|_| ()).unwrap_left();
+                    let v =
+                        new.opts
+                            .alloc(rat_ir::Value::Operator(o, r, Y::default(), PhantomData));
+                    new.blocks[tk].insts.push(v);
+                    v
+                }
+                super::Instr::Store(a, b, s) => {
+                    let r = vec![a, b]
+                        .into_iter()
+                        .filter_map(|x| valmap.get(x))
+                        .copied()
+                        .map(|a| Use {
+                            value: a,
+                            select: S::default(),
+                        })
+                        .collect::<Vec<_>>();
+                    let o = O::push(Store { size: *s }).map_right(|_| ()).unwrap_left();
+                    let v =
+                        new.opts
+                            .alloc(rat_ir::Value::Operator(o, r, Y::default(), PhantomData));
+                    new.blocks[tk].insts.push(v);
+                    v
+                }
+                super::Instr::Alloca(v) => {
+                    let r = vec![Use {
+                        select: S::default(),
+                        value: *valmap.get(v).unwrap(),
+                    }];
+                    let o = O::push(Alloca {}).map_right(|_| ()).unwrap_left();
+                    let v =
+                        new.opts
+                            .alloc(rat_ir::Value::Operator(o, r, Y::default(), PhantomData));
+                    new.blocks[tk].insts.push(v);
+                    v
+                }
                 super::Instr::Plat(p, b) => {
                     let r = b
                         .iter()
@@ -131,7 +187,7 @@ pub fn copy_block<
                     ));
                     new.blocks[tk].insts.push(v);
                     v
-                },
+                }
                 super::Instr::OS => todo!(),
             },
         );
@@ -190,7 +246,16 @@ pub fn copy_block<
 }
 pub fn export_func<
     C,
-    O: Push<BinOp> + Push<Fptr<String>> + Push<Call> + Push<u64> + Push<CondType> + Push<Plat> +Push<Data>,
+    O: Push<BinOp>
+        + Push<Fptr<String>>
+        + Push<Call>
+        + Push<u64>
+        + Push<CondType>
+        + Push<Plat>
+        + Push<Data>
+        + Push<Alloca>
+        + Push<Load>
+        + Push<Store>,
     T: Default + Push<BlockTarget<O, T, Y, S>> + Push<If<O, T, Y, S, BlockTarget<O, T, Y, S>>>,
     Y: Default + Clone,
     S: Default,

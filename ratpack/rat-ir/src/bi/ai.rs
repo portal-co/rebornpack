@@ -201,13 +201,13 @@ impl<
             .norm(
                 |a| {
                     Ok(crate::BlockTarget {
-                        block: unsafe { std::mem::transmute(a.block) },
+                        block: unsafe { a.block.transmute() },
                         args: a
                             .args
                             .iter()
                             .map(|a| {
                                 Ok(Use {
-                                    value: unsafe { std::mem::transmute(a.value) },
+                                    value: unsafe { a.value.transmute() },
                                     select: Default::default(), //TODO
                                 })
                             })
@@ -215,7 +215,7 @@ impl<
                         prepend: vec![], //TODO
                     })
                 },
-                |v| Ok(unsafe { std::mem::transmute(v) }),
+                |v| Ok(unsafe { v.transmute() }),
             )?
             .into();
         let st2 = unsafe {
@@ -238,7 +238,7 @@ impl<
                     .iter()
                     .map(|r| {
                         valmap
-                            .get(&unsafe { std::mem::transmute(r.value) })
+                            .get(&unsafe { r.value.transmute() })
                             .unwrap()
                             .1
                             .clone()
@@ -249,13 +249,13 @@ impl<
                     state,
                     new,
                     &crate::BlockTarget {
-                        block: unsafe { std::mem::transmute(k.block) },
+                        block: unsafe { k.block.transmute()},
                         args: k
                             .args
                             .iter()
                             .map(|a| {
                                 Ok(Use {
-                                    value: unsafe { std::mem::transmute(a.value) },
+                                    value: unsafe { a.value.transmute()},
                                     select: Default::default(), //TODO
                                 })
                             })
@@ -268,7 +268,7 @@ impl<
             },
             &valmap
                 .iter()
-                .map(|(a, b)| (unsafe { std::mem::transmute(*a) }, b.0.clone()))
+                .map(|(a, b)| (unsafe { a.transmute() }, b.0.clone()))
                 .collect(),
             new,
             k,

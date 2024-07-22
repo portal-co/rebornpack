@@ -17,13 +17,14 @@ pub enum CondType{
 pub enum Plat{
     Linux,WASM,
 }
-#[derive(Clone,Debug,Hash,PartialEq, Eq,Serialize,Deserialize)]
+#[derive(Copy,Clone,Debug,Hash,PartialEq, Eq,Serialize,Deserialize)]
 pub enum Size{
     _8,
     _16,
     _32,
     _64
 }
+
 #[derive(Clone,Debug,Hash,Serialize,Deserialize)]
 pub enum Ast{
     Call(Box<Ast>, Vec<Ast>),

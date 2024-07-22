@@ -1,0 +1,11 @@
+[package]
+name = "rat-stackvm"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+id-arena.workspace = true
+marl = { version = "0.1.0", path = "../../marl" }
+rat-debug = { version = "0.1.0", path = "../rat-debug" }
+rat-ir = { version = "0.1.0", path = "../rat-ir" }

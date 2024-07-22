@@ -8,7 +8,7 @@ use rat_ir::{
 
 use crate::backend::{CondType, Plat};
 
-use super::{rat_fe::Data, Instr, SSAFunc, Term, ValueId};
+use super::{rat_fe::Data, Alloca, Instr, Load, SSAFunc, Store, Term, ValueId};
 
 pub trait BackendOp<C, O, T, Y, S> {
     fn emit(
@@ -148,6 +148,57 @@ impl<C, O, T, Y, S> BackendOp<C, O, T, Y, S> for Call {
             f.blocks[k].need(Instr::Call(
                 params[0].clone(),
                 params[1..].iter().cloned().collect(),
+            )),
+            k,
+        ));
+    }
+}
+impl<C, O, T, Y, S> BackendOp<C, O, T, Y, S> for Alloca {
+    fn emit(
+        &self,
+        ctx: &mut C,
+        params: Vec<ValueId>,
+        f: &mut SSAFunc,
+        k: Id<super::Block>,
+    ) -> anyhow::Result<(ValueId, Id<super::Block>)> {
+        return Ok((
+            f.blocks[k].need(Instr::Alloca(
+                params[0].clone(),
+            )),
+            k,
+        ));
+    }
+}
+impl<C, O, T, Y, S> BackendOp<C, O, T, Y, S> for Load {
+    fn emit(
+        &self,
+        ctx: &mut C,
+        params: Vec<ValueId>,
+        f: &mut SSAFunc,
+        k: Id<super::Block>,
+    ) -> anyhow::Result<(ValueId, Id<super::Block>)> {
+        return Ok((
+            f.blocks[k].need(Instr::Load(
+                params[0].clone(),
+                self.size.clone(),
+            )),
+            k,
+        ));
+    }
+}
+impl<C, O, T, Y, S> BackendOp<C, O, T, Y, S> for Store {
+    fn emit(
+        &self,
+        ctx: &mut C,
+        params: Vec<ValueId>,
+        f: &mut SSAFunc,
+        k: Id<super::Block>,
+    ) -> anyhow::Result<(ValueId, Id<super::Block>)> {
+        return Ok((
+            f.blocks[k].need(Instr::Store(
+                params[0].clone(),
+                params[1].clone(),
+                self.size.clone(),
             )),
             k,
         ));

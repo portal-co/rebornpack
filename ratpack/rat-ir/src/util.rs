@@ -150,6 +150,11 @@ impl<T: Clone> Extract<Vec<T>> for Vec<T>{
         self.clone()
     }
 }
+impl<T: Clone> Extract<Option<T>> for Option<T>{
+    fn extract(&self) -> Option<T> {
+        self.clone()
+    }
+}
 impl<T: Extract<A>, U: Extract<A>, A> Extract<A> for Either<T, U> {
     fn extract(&self) -> A {
         match self {

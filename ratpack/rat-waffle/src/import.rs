@@ -6,7 +6,7 @@ use id_arena::Id;
 use rat_ir::{
     no_push,
     transform::{ctx::NormalTermIn, NormalTerm},
-    util::{Extract, Push},
+    util::{Extract, If, Push},
     BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Call, Func, SaneTerminator,
     Use, Value,
 };
@@ -47,8 +47,12 @@ impl WaffleOp for OpWrapper {
         Self(x.clone())
     }
 }
-impl<O: Push<OpWrapper> + Push<Call<O, T, Y, S>>, T:  Push<WaffleTerm<O, T, Y, S, waffle::Func>>+, Y, S> ImportOp<O, T, Y, S>
-    for Normal<PerEntity<waffle::Func, Option<Id<Func<O, T, Y, S>>>>>
+impl<
+        O: Push<OpWrapper> + Push<Call<O, T, Y, S>>,
+        T: Push<WaffleTerm<O, T, Y, S, waffle::Func>>,
+        Y,
+        S,
+    > ImportOp<O, T, Y, S> for Normal<PerEntity<waffle::Func, Option<Id<Func<O, T, Y, S>>>>>
 {
     fn op(
         &mut self,
@@ -80,7 +84,9 @@ impl<O: Push<OpWrapper> + Push<Call<O, T, Y, S>>, T:  Push<WaffleTerm<O, T, Y, S
         return Ok((v, k));
     }
 }
-impl<O: Push<OpWrapper>, T:  Push<WaffleTerm<O, T, Y, S, waffle::Func>>, Y, S> ImportOp<O, T, Y, S> for Normal<()> {
+impl<O: Push<OpWrapper>, T: Push<WaffleTerm<O, T, Y, S, waffle::Func>>, Y, S> ImportOp<O, T, Y, S>
+    for Normal<()>
+{
     fn op(
         &mut self,
         op: &Operator,
@@ -111,8 +117,15 @@ impl<O: Push<OpWrapper>, T:  Push<WaffleTerm<O, T, Y, S, waffle::Func>>, Y, S> I
         return Ok((v, k));
     }
 }
-impl<W, O, T: Push<WaffleTerm<O, T, Y, S, waffle::Func>>, Y, S: Push<Option<usize>>>
-    ImportTerm<O, T, Y, S> for Normal<W>
+impl<
+        W,
+        O,
+        T: Push<WaffleTerm<O, T, Y, S, waffle::Func>>
+            + Push<BlockTarget<O, T, Y, S>>
+            + Push<If<O, T, Y, S, BlockTarget<O, T, Y, S>>>,
+        Y,
+        S: Push<Option<usize>>,
+    > ImportTerm<O, T, Y, S> for Normal<W>
 {
     fn term(
         &mut self,
@@ -137,9 +150,12 @@ impl<W, O, T: Push<WaffleTerm<O, T, Y, S, waffle::Func>>, Y, S: Push<Option<usiz
                         .collect(),
                     prepend: vec![],
                 };
-                dst.blocks[k].term = T::push(WaffleTerm::Br(target))
-                    .map_right(|_| ())
-                    .unwrap_left();
+                dst.blocks[k].term = match T::push(target) {
+                    Either::Left(l) => l,
+                    Either::Right(target) => T::push(WaffleTerm::Br(target))
+                        .map_right(|_| ())
+                        .unwrap_left(),
+                };
                 Ok(())
             }
             Terminator::CondBr {
@@ -163,16 +179,23 @@ impl<W, O, T: Push<WaffleTerm<O, T, Y, S, waffle::Func>>, Y, S: Push<Option<usiz
                 let if_true = target(if_true);
                 let if_false = target(if_false);
                 let cond = mapper[*cond].unwrap();
-                dst.blocks[k].term = T::push(WaffleTerm::CondBr {
-                    cond: Use {
+                dst.blocks[k].term = match T::push(If {
+                    val: Use {
                         value: cond,
                         select: S::push(None).map_right(|_| ()).unwrap_left(),
                     },
-                    if_true,
-                    if_false,
-                })
-                .map_right(|_| ())
-                .unwrap_left();
+                    then: if_true,
+                    r#else: Some(if_false),
+                }) {
+                    Either::Left(l) => l,
+                    Either::Right(c) => T::push(WaffleTerm::CondBr {
+                        cond: c.val,
+                        if_true: c.then,
+                        if_false: c.r#else.unwrap(),
+                    })
+                    .map_right(|_| ())
+                    .unwrap_left(),
+                };
                 Ok(())
             }
             Terminator::Select {
@@ -239,7 +262,7 @@ impl<W, O, T: Push<WaffleTerm<O, T, Y, S, waffle::Func>>, Y, S: Push<Option<usiz
                 .unwrap_left();
                 Ok(())
             }
-            Terminator::ReturnCallIndirect { sig,table, args } => {
+            Terminator::ReturnCallIndirect { sig, table, args } => {
                 let values = args
                     .iter()
                     .map(|v| mapper[*v].unwrap())
@@ -347,7 +370,7 @@ impl<O, T, Y: Clone, S: Clone, F: Clone> Clone for WaffleTerm<O, T, Y, S, F> {
                 // sig: *sig,
                 args: args.clone(),
             },
-            Self::ReturnCallRef {  args } => Self::ReturnCallRef {
+            Self::ReturnCallRef { args } => Self::ReturnCallRef {
                 // sig: *sig,
                 args: args.clone(),
             },
@@ -425,7 +448,7 @@ impl<O, T, Y, S, F> SaneTerminator<O, T, Y, S> for WaffleTerm<O, T, Y, S, F> {
             WaffleTerm::Unreachable => Either::Right(Either::Right(Either::Left(empty()))),
             WaffleTerm::ReturnCall { func, args } => Either::Left(args.iter_mut()),
             WaffleTerm::ReturnCallIndirect { table, args } => Either::Left(args.iter_mut()),
-            WaffleTerm::ReturnCallRef {  args } => Either::Left(args.iter_mut()),
+            WaffleTerm::ReturnCallRef { args } => Either::Left(args.iter_mut()),
         }
     }
 
@@ -555,7 +578,7 @@ impl<O, T, Y: Extract<Y2>, S: Extract<S2>, O2, T2, Y2, S2, F: Clone>
                     })
                     .collect(),
             },
-            WaffleTerm::ReturnCallRef {  args } => WaffleTerm::ReturnCallRef {
+            WaffleTerm::ReturnCallRef { args } => WaffleTerm::ReturnCallRef {
                 // sig: *sig,
                 args: args
                     .iter()
@@ -647,7 +670,7 @@ impl<O, T, Y: Extract<Y2>, S: Extract<S2>, O2, T2, Y2, S2, C, F: Clone>
                     })
                     .collect(),
             },
-            WaffleTerm::ReturnCallRef {  args } => WaffleTerm::ReturnCallRef {
+            WaffleTerm::ReturnCallRef { args } => WaffleTerm::ReturnCallRef {
                 // sig: *sig,
                 args: args
                     .iter()

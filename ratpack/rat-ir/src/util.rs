@@ -10,10 +10,7 @@ use id_arena::Id;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    bi::NormalTermBi,
-    module::TailCall,
-    transform::{ctx::NormalTermIn, NormalTerm},
-    BlockTarget, Call, SaneTerminator, Use, Value,
+    bi::NormalTermBi, module::TailCall, transform::{ctx::NormalTermIn, NormalTerm}, BlockTarget, Bound, Call, SaneTerminator, Use, Value
 };
 #[derive(Debug,Serialize,Deserialize)]
 pub struct PerID<A, B> {
@@ -382,4 +379,17 @@ impl<
                 .map(|x| NormalTermIn::norm(x, ctx, to_dst, m)),
         }
     }
+}
+pub struct Merge<A,B>{
+    pub a: A,
+    pub b: B,
+}
+impl<A: Bound,B: Bound> Bound for Merge<A,B>{
+    type O<O, T, Y, S> = Either<A::O<O,T,Y,S>,B::O<O,T,Y,S>>;
+
+    type T<O, T, Y, S> = Either<A::T<O,T,Y,S>,B::T<O,T,Y,S>>;
+
+    type Y<O, T, Y, S> = Either<A::Y<O,T,Y,S>,B::Y<O,T,Y,S>>;
+
+    type S<O, T, Y, S> = Either<A::S<O,T,Y,S>,B::S<O,T,Y,S>>;
 }

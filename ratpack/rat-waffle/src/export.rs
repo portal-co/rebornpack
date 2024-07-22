@@ -16,7 +16,7 @@ use once_cell::sync::Lazy;
 // };
 use rat_ir::{
     bi::ai::InferOp,
-    util::{BinOp, ExtractIn, PerID},
+    util::{BinOp, ExtractIn, If, PerID},
     Block, BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Call, Func,
 };
 use serde::{Deserialize, Serialize};
@@ -514,6 +514,83 @@ pub trait Wf<C> {
 impl<C> Wf<C> for waffle::Func {
     fn wf(&self, ctx: &mut C, m: &mut Module) -> anyhow::Result<waffle::Func> {
         Ok(self.clone())
+    }
+}
+impl<O, T, Y, S: WaffleExtra<Option<usize>>, C> ExportTerm<O, T, Y, S, C>
+    for BlockTarget<O, T, Y, S>
+{
+    fn export_term(
+        &self,
+        ctx: &mut C,
+        m: &mut Module,
+        target: &mut FunctionBody,
+        k: waffle::Block,
+        valmap: &PerID<rat_ir::Value<O, T, Y, S>, Vec<waffle::Value>>,
+        block_map: &PerID<Block<O, T, Y, S>, waffle::Block>,
+    ) -> anyhow::Result<()> {
+        let mut target_ = |m: &mut Module, b: &BlockTarget<O, T, Y, S>| waffle::BlockTarget {
+            block: block_map[b.block],
+            args: b
+                .args
+                .iter()
+                .flat_map(|x| {
+                    let mut y = valmap[x.value].clone();
+                    if let Some(w) = x.select.waffle(&mut *m) {
+                        y = vec![y[w]]
+                    }
+                    y
+                })
+                .collect(),
+        };
+        target.set_terminator(
+            k,
+            waffle::Terminator::Br {
+                target: target_(m, self),
+            },
+        );
+        Ok(())
+    }
+}
+impl<O, T, Y, S: WaffleExtra<Option<usize>>, C, W: ExportTerm<O, T, Y, S, C>>
+    ExportTerm<O, T, Y, S, C> for If<O, T, Y, S, W>
+{
+    fn export_term(
+        &self,
+        ctx: &mut C,
+        m: &mut Module,
+        target: &mut FunctionBody,
+        k: waffle::Block,
+        valmap: &PerID<rat_ir::Value<O, T, Y, S>, Vec<waffle::Value>>,
+        block_map: &PerID<Block<O, T, Y, S>, waffle::Block>,
+    ) -> anyhow::Result<()> {
+        let x = &self.val;
+        let mut y = valmap[x.value].clone();
+        if let Some(w) = x.select.waffle(&mut *m) {
+            y = vec![y[w]];
+        }
+        let y = y[0];
+        let a = target.add_block();
+        self.then
+            .export_term(ctx, m, target, a, valmap, block_map)?;
+        let b = target.add_block();
+        if let Some(e) = self.r#else.as_ref() {
+            e.export_term(ctx, m, target, b, valmap, block_map)?;
+        };
+        target.set_terminator(
+            k,
+            waffle::Terminator::CondBr {
+                cond: y,
+                if_true: waffle::BlockTarget {
+                    block: a,
+                    args: vec![],
+                },
+                if_false: waffle::BlockTarget {
+                    block: b,
+                    args: vec![],
+                },
+            },
+        );
+        Ok(())
     }
 }
 impl<O, T, Y, S: WaffleExtra<Option<usize>>, C, F: Wf<C>> ExportTerm<O, T, Y, S, C>

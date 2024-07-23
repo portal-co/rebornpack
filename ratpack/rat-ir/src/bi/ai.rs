@@ -90,15 +90,19 @@ impl<D, Y, A: InferOp<D, Y>, B: InferOp<D, Y>> InferOp<D, Y> for Either<A, B> {
     }
 }
 #[repr(transparent)]
-pub struct AI<D,E, Y3, U> {
+pub struct AI<D, E, Y3, U> {
     pub ctx: D,
     pub phantom: PhantomData<fn(&Y3, &U)>,
     pub ph2: PhantomData<E>,
 }
 
-impl<D,E,Y3,U> AI<D,E,Y3,U>{
-    pub fn new(d: D) -> Self{
-        Self { ctx: d, phantom: PhantomData, ph2: PhantomData }
+impl<D, E, Y3, U> AI<D, E, Y3, U> {
+    pub fn new(d: D) -> Self {
+        Self {
+            ctx: d,
+            phantom: PhantomData,
+            ph2: PhantomData,
+        }
     }
 }
 impl<
@@ -114,7 +118,7 @@ impl<
         S2: Default,
         U: From<T::Then>,
         E,
-    > Tracer<O, T, Y, S, O2, T2, Y2, S2> for AI<D,E, Y3, U>
+    > Tracer<O, T, Y, S, O2, T2, Y2, S2> for AI<D, E, Y3, U>
 {
     type Instance = (Vec<Y3>, Arc<D::Instance>);
 
@@ -249,13 +253,13 @@ impl<
                     state,
                     new,
                     &crate::BlockTarget {
-                        block: unsafe { k.block.transmute()},
+                        block: unsafe { k.block.transmute() },
                         args: k
                             .args
                             .iter()
                             .map(|a| {
                                 Ok(Use {
-                                    value: unsafe { a.value.transmute()},
+                                    value: unsafe { a.value.transmute() },
                                     select: Default::default(), //TODO
                                 })
                             })

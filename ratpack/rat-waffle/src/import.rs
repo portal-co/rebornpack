@@ -6,7 +6,7 @@ use id_arena::Id;
 use rat_ir::{
     no_push,
     transform::{ctx::NormalTermIn, NormalTerm},
-    util::{Extract, If, Push},
+    util::{BinOp, Extract, If, Push, Ret},
     BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Call, Func, SaneTerminator,
     Use, Value,
 };
@@ -47,12 +47,45 @@ impl WaffleOp for OpWrapper {
         Self(x.clone())
     }
 }
-impl<
-        O: Push<OpWrapper> + Push<Call<O, T, Y, S>>,
-        T: Push<WaffleTerm<O, T, Y, S, waffle::Func>>,
-        Y,
-        S,
-    > ImportOp<O, T, Y, S> for Normal<PerEntity<waffle::Func, Option<Id<Func<O, T, Y, S>>>>>
+// impl<
+//         O: Push<OpWrapper> + Push<Call<O, T, Y, S>>,
+//         T: Push<WaffleTerm<O, T, Y, S, waffle::Func>>,
+//         Y,
+//         S,
+//     > ImportOp<O, T, Y, S> for Normal<PerEntity<waffle::Func, Option<Id<Func<O, T, Y, S>>>>>
+// {
+//     fn op(
+//         &mut self,
+//         op: &Operator,
+//         func: &mut Func<O, T, Y, S>,
+//         args: Vec<Use<O, T, Y, S>>,
+//         ty: Y,
+//         k: Id<rat_ir::Block<O, T, Y, S>>,
+//     ) -> anyhow::Result<(Id<Value<O, T, Y, S>>, Id<rat_ir::Block<O, T, Y, S>>)> {
+//         let v = func.opts.alloc(Value::Operator(
+//             (|| {
+//                 let Operator::Call { function_index } = op else {
+//                     return O::push(OpWrapper(op.clone()))
+//                         .map_right(|_| ())
+//                         .unwrap_left();
+//                 };
+//                 let Some(x) = self.fn_map[*function_index].as_ref() else {
+//                     return O::push(OpWrapper(op.clone()))
+//                         .map_right(|_| ())
+//                         .unwrap_left();
+//                 };
+//                 return O::push(Call { func: *x }).map_right(|_| ()).unwrap_left();
+//             })(),
+//             args,
+//             ty,
+//             PhantomData,
+//         ));
+//         func.blocks[k].insts.push(v);
+//         return Ok((v, k));
+//     }
+// }
+impl<O: Push<OpWrapper> + Push<BinOp>, T: Push<WaffleTerm<O, T, Y, S, waffle::Func>>, Y, S,W> ImportOp<O, T, Y, S>
+    for Normal<W>
 {
     fn op(
         &mut self,
@@ -64,39 +97,76 @@ impl<
     ) -> anyhow::Result<(Id<Value<O, T, Y, S>>, Id<rat_ir::Block<O, T, Y, S>>)> {
         let v = func.opts.alloc(Value::Operator(
             (|| {
-                let Operator::Call { function_index } = op else {
-                    return O::push(OpWrapper(op.clone()))
-                        .map_right(|_| ())
-                        .unwrap_left();
-                };
-                let Some(x) = self.fn_map[*function_index].as_ref() else {
-                    return O::push(OpWrapper(op.clone()))
-                        .map_right(|_| ())
-                        .unwrap_left();
-                };
-                return O::push(Call { func: *x }).map_right(|_| ()).unwrap_left();
-            })(),
-            args,
-            ty,
-            PhantomData,
-        ));
-        func.blocks[k].insts.push(v);
-        return Ok((v, k));
-    }
-}
-impl<O: Push<OpWrapper>, T: Push<WaffleTerm<O, T, Y, S, waffle::Func>>, Y, S> ImportOp<O, T, Y, S>
-    for Normal<()>
-{
-    fn op(
-        &mut self,
-        op: &Operator,
-        func: &mut Func<O, T, Y, S>,
-        args: Vec<Use<O, T, Y, S>>,
-        ty: Y,
-        k: Id<rat_ir::Block<O, T, Y, S>>,
-    ) -> anyhow::Result<(Id<Value<O, T, Y, S>>, Id<rat_ir::Block<O, T, Y, S>>)> {
-        let v = func.opts.alloc(Value::Operator(
-            (|| {
+                match op{
+                    Operator::I32Add | Operator::I64Add | Operator::F32Add | Operator::F64Add => {
+                        if let Either::Left(l) = O::push(BinOp::Add){
+                            return l;
+                        }
+                    },
+                    Operator::I32Sub | Operator::I64Sub | Operator::F32Sub | Operator::F64Sub => {
+                        if let Either::Left(l) = O::push(BinOp::Sub){
+                            return l;
+                        }
+                    },
+                    Operator::I32Mul | Operator::I64Mul | Operator::F32Mul | Operator::F64Mul => {
+                        if let Either::Left(l) = O::push(BinOp::Mul){
+                            return l;
+                        }
+                    },
+                    Operator::I32DivS | Operator::I64DivS | Operator::F32Div | Operator::F64Div => {
+                        if let Either::Left(l) = O::push(BinOp::DivS){
+                            return l;
+                        }
+                    },
+                    Operator::I32RemS | Operator::I64RemS => {
+                        if let Either::Left(l) = O::push(BinOp::ModS){
+                            return l;
+                        }
+                    },
+                    Operator::I32RemU | Operator::I64RemU => {
+                        if let Either::Left(l) = O::push(BinOp::ModU){
+                            return l;
+                        }
+                    },
+                    Operator::I32DivU | Operator::I64DivU => {
+                        if let Either::Left(l) = O::push(BinOp::DivU){
+                            return l;
+                        }
+                    },
+                    Operator::I32And | Operator::I64And => {
+                        if let Either::Left(l) = O::push(BinOp::And){
+                            return l;
+                        }
+                    },
+                    Operator::I32Or | Operator::I64Or => {
+                        if let Either::Left(l) = O::push(BinOp::Or){
+                            return l;
+                        }
+                    },
+                    Operator::I32Xor | Operator::I64Xor => {
+                        if let Either::Left(l) = O::push(BinOp::Xor){
+                            return l;
+                        }
+                    },
+                    Operator::I32Shl | Operator::I64Shl => {
+                        if let Either::Left(l) = O::push(BinOp::Shl){
+                            return l;
+                        }
+                    },
+                    Operator::I32ShrU | Operator::I64ShrU => {
+                        if let Either::Left(l) = O::push(BinOp::ShrU){
+                            return l;
+                        }
+                    },
+                    Operator::I32ShrS | Operator::I64ShrS => {
+                        if let Either::Left(l) = O::push(BinOp::ShrS){
+                            return l;
+                        }
+                    },
+                    _ => {
+
+                    }
+                }
                 // let Operator::Call { function_index } = op else {
                 return O::push(OpWrapper(op.clone()))
                     .map_right(|_| ())
@@ -122,7 +192,10 @@ impl<
         O,
         T: Push<WaffleTerm<O, T, Y, S, waffle::Func>>
             + Push<BlockTarget<O, T, Y, S>>
-            + Push<If<O, T, Y, S, BlockTarget<O, T, Y, S>>>,
+            + Push<If<O, T, Y, S, BlockTarget<O, T, Y, S>>>
+            + Push<Ret<Vec<Use<O, T, Y, S>>>>
+            + Push<Ret<Use<O, T, Y, S>>>
+            + Push<Ret<()>>,
         Y,
         S: Push<Option<usize>>,
     > ImportTerm<O, T, Y, S> for Normal<W>
@@ -151,10 +224,8 @@ impl<
                     prepend: vec![],
                 };
                 dst.blocks[k].term = match T::push(target) {
-                    Either::Left(l) => l,
-                    Either::Right(target) => T::push(WaffleTerm::Br(target))
-                        .map_right(|_| ())
-                        .unwrap_left(),
+                    Either::Left(l) => Some(l),
+                    Either::Right(target) => T::push(WaffleTerm::Br(target)).left(),
                 };
                 Ok(())
             }
@@ -187,14 +258,13 @@ impl<
                     then: if_true,
                     r#else: Some(if_false),
                 }) {
-                    Either::Left(l) => l,
+                    Either::Left(l) => Some(l),
                     Either::Right(c) => T::push(WaffleTerm::CondBr {
                         cond: c.val,
                         if_true: c.then,
                         if_false: c.r#else.unwrap(),
                     })
-                    .map_right(|_| ())
-                    .unwrap_left(),
+                    .left(),
                 };
                 Ok(())
             }
@@ -227,22 +297,38 @@ impl<
                     cases: targets,
                     default: default,
                 })
-                .map_right(|_| ())
-                .unwrap_left();
+                .left();
                 Ok(())
             }
             Terminator::Return { values } => {
-                let values = values
-                    .iter()
-                    .map(|v| mapper[*v].unwrap())
-                    .map(|a| Use {
-                        value: a,
-                        select: S::push(None).map_right(|_| ()).unwrap_left(),
+                let values = || {
+                    values
+                        .iter()
+                        .map(|v| mapper[*v].unwrap())
+                        .map(|a| Use {
+                            value: a,
+                            select: S::push(None).map_right(|_| ()).unwrap_left(),
+                        })
+                        .collect::<Vec<_>>()
+                };
+                let mut v1 = values();
+                let did = match v1.len() {
+                    0 => T::push(Ret { wrapped: () }).left(),
+                    1 => T::push(Ret {
+                        wrapped: v1.remove(0),
                     })
-                    .collect();
-                dst.blocks[k].term = T::push(WaffleTerm::Ret(values))
-                    .map_right(|_| ())
-                    .unwrap_left();
+                    .left(),
+                    _ => None,
+                };
+                let did = match did {
+                    Some(a) => Some(a),
+                    None => T::push(Ret { wrapped: values() }).left(),
+                };
+                let did = match did {
+                    Some(a) => Some(a),
+                    None => T::push(WaffleTerm::Ret(values())).left(),
+                };
+                dst.blocks[k].term = did;
                 Ok(())
             }
             Terminator::ReturnCall { func, args } => {
@@ -258,8 +344,7 @@ impl<
                     func: *func,
                     args: values,
                 })
-                .map_right(|_| ())
-                .unwrap_left();
+                .left();
                 Ok(())
             }
             Terminator::ReturnCallIndirect { sig, table, args } => {
@@ -276,8 +361,7 @@ impl<
                     // sig: *sig,
                     args: values,
                 })
-                .map_right(|_| ())
-                .unwrap_left();
+                .left();
                 Ok(())
             }
             Terminator::ReturnCallRef { sig, args } => {
@@ -293,8 +377,7 @@ impl<
                     // sig: *sig,
                     args: values,
                 })
-                .map_right(|_| ())
-                .unwrap_left();
+                .left();
                 Ok(())
             }
             _ => Ok(()),

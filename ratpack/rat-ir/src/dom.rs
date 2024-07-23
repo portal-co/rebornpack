@@ -131,7 +131,7 @@ impl<O, T: SaneTerminator<O, T, Y, S>, Y, S> Func<O, T, Y, S> {
     pub fn values_in<'a>(
         &'a mut self,
         x: JustBlock<O, T, Y, S>,
-    ) -> impl Iterator<Item = Id<Value<O, T, Y, S>>> + 'a{
+    ) -> impl Iterator<Item = Id<Value<O, T, Y, S>>> + 'a {
         let m = self.domap();
         return self
             .blocks
@@ -143,7 +143,7 @@ impl<O, T: SaneTerminator<O, T, Y, S>, Y, S> Func<O, T, Y, S> {
     pub fn values_in_ref<'a>(
         &'a self,
         x: JustBlock<O, T, Y, S>,
-    ) -> impl Iterator<Item = Id<Value<O, T, Y, S>>> + 'a{
+    ) -> impl Iterator<Item = Id<Value<O, T, Y, S>>> + 'a {
         let m = self.domap_ref();
         return self
             .blocks
@@ -154,7 +154,7 @@ impl<O, T: SaneTerminator<O, T, Y, S>, Y, S> Func<O, T, Y, S> {
     }
     pub fn domap(&mut self) -> BTreeMap<Block<O, T, Y, S>, JustBlock<O, T, Y, S>> {
         let r = crate::cfg::calculate_postorder(self.entry, |x| {
-            self.blocks[x].term.targets().into_iter().collect()
+            self.blocks[x].term.iter().flat_map(|a|a.targets()).into_iter().collect() 
         })
         .into_iter()
         .map(Some)
@@ -171,7 +171,7 @@ impl<O, T: SaneTerminator<O, T, Y, S>, Y, S> Func<O, T, Y, S> {
     }
     pub fn domap_ref(&self) -> BTreeMap<Block<O, T, Y, S>, JustBlock<O, T, Y, S>> {
         let r = crate::cfg::calculate_postorder(self.entry, |x| {
-            self.blocks[x].term.targets().into_iter().collect()
+            self.blocks[x].term.iter().flat_map(|a|a.targets()).into_iter().collect()
         })
         .into_iter()
         .map(Some)

@@ -87,7 +87,7 @@ impl Detect for AddCmul {
 }
 /// {targets.0} += `clear` * {targets.1}
 /// `clear` <- 0
-pub struct Divert{
+pub struct Divert {
     pub clear: Id<Var>,
-    pub targets: BTreeMap<Id<Var>,u64>
+    pub targets: BTreeMap<Id<Var>, u64>,
 }

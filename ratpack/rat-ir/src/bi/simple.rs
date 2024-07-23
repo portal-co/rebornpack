@@ -380,11 +380,10 @@ impl<
     fn warp(&mut self, x: Either<Va, Vb>) -> impl Builder<O2, T2, Y2, S2, Result = T2> {
         match x {
             Either::Left(a) => Either::Left(self.first().warp(a)),
-            Either::Right(b) => Either::Right(self.second().warp(b))
+            Either::Right(b) => Either::Right(self.second().warp(b)),
         }
     }
 }
-
 
 pub trait Simple<O, T, Y, S, O2, T2, Y2, S2, T2B>:
     SimpleOp<O, Y, O2, T2, Y2, S2>
@@ -503,9 +502,8 @@ impl<
             &valmap.iter().map(|(a, b)| (*a, **b)).collect(),
         );
         let (n, k) = Box::new(state.tracer.wrapped.warp(n)).build(new, k)?;
-        new.blocks[k].term = n;
+        new.blocks[k].term = Some(n);
         new.blocks[k].term_span = span;
         Ok(())
     }
 }
-

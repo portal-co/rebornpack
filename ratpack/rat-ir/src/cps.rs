@@ -40,9 +40,7 @@ pub trait CpsManyBuilder<O, T, Y, S, R> {
 pub struct FromBuilder<F> {
     pub go: F,
 }
-impl<O, T, Y, S, F: Builder<O, T, Y, S>, R> CpsManyBuilder<O, T, Y, S, R>
-    for FromBuilder<F>
-{
+impl<O, T, Y, S, F: Builder<O, T, Y, S>, R> CpsManyBuilder<O, T, Y, S, R> for FromBuilder<F> {
     type Result = F::Result;
 
     fn build<'b: 'd, 'c: 'd, 'd, U: 'd>(
@@ -89,7 +87,7 @@ impl<
     ) -> anyhow::Result<(Self::Result, Id<Block<O, T, Y, S>>)> {
         let k = func.blocks.alloc(Default::default());
         for _ in self.wrapped.build(func, root, (), |_, v, f, b| {
-            f.blocks[b].term = T::push(BlockTarget {
+            f.blocks[b].term = Some(T::push(BlockTarget {
                 block: k,
                 args: vec![Use {
                     value: v,
@@ -98,7 +96,7 @@ impl<
                 prepend: vec![],
             })
             .map_right(|_| ())
-            .unwrap_left();
+            .unwrap_left());
             Ok(())
         })? {}
         let p = func.add_blockparam(k, self.r#type);
@@ -180,7 +178,7 @@ unsafe impl<O, T, Y, S, R, A: CpsManyBuilder<O, T, Y, S, R>> DynCpsManyBuilder<O
 {
     type Result = A::Result;
 
-    fn dyn_build< 'b: 'd, 'c: 'd, 'd>(
+    fn dyn_build<'b: 'd, 'c: 'd, 'd>(
         self: Box<Self>,
         func: &'b mut Func<O, T, Y, S>,
         root: Id<Block<O, T, Y, S>>,

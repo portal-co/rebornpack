@@ -143,7 +143,7 @@ pub fn tweak_terminator(
             for a in args {
                 m(a)
             }
-        },
+        }
     }
 }
 pub fn clone_value(

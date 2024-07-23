@@ -43,7 +43,9 @@ pub struct Fptr<T> {
 no_push!(
     type Fptr<T>;
 );
-no_push!(type CondType;);
+no_push!(
+    type CondType;
+);
 impl<C, O, T, Y, S> BackendOp<C, O, T, Y, S> for Fptr<String> {
     fn emit(
         &self,
@@ -66,7 +68,7 @@ impl<C, O, T, Y, S> BackendOp<C, O, T, Y, S> for Data {
         return Ok((f.blocks[k].need(Instr::Data(self.0.clone())), k));
     }
 }
-impl<C,O,T,Y,S> BackendOp<C,O,T,Y,S> for CondType{
+impl<C, O, T, Y, S> BackendOp<C, O, T, Y, S> for CondType {
     fn emit(
         &self,
         ctx: &mut C,
@@ -79,7 +81,11 @@ impl<C,O,T,Y,S> BackendOp<C,O,T,Y,S> for CondType{
         let done = fun.blocks.alloc(Default::default());
         // let (cond, k) = cond.ssa(fun, k, vars, fparams,via)?;
         let cond = params[0].clone();
-        let mut vars = fun.blocks[k].insts.iter().map(|a|((),a.0.clone())).collect::<Vec<_>>();
+        let mut vars = fun.blocks[k]
+            .insts
+            .iter()
+            .map(|a| ((), a.0.clone()))
+            .collect::<Vec<_>>();
         let bak = vars.clone();
         let mut trup = vec![];
         for (i, (_, v)) in vars.iter_mut().enumerate() {
@@ -161,12 +167,7 @@ impl<C, O, T, Y, S> BackendOp<C, O, T, Y, S> for Alloca {
         f: &mut SSAFunc,
         k: Id<super::Block>,
     ) -> anyhow::Result<(ValueId, Id<super::Block>)> {
-        return Ok((
-            f.blocks[k].need(Instr::Alloca(
-                params[0].clone(),
-            )),
-            k,
-        ));
+        return Ok((f.blocks[k].need(Instr::Alloca(params[0].clone())), k));
     }
 }
 impl<C, O, T, Y, S> BackendOp<C, O, T, Y, S> for Load {
@@ -178,10 +179,7 @@ impl<C, O, T, Y, S> BackendOp<C, O, T, Y, S> for Load {
         k: Id<super::Block>,
     ) -> anyhow::Result<(ValueId, Id<super::Block>)> {
         return Ok((
-            f.blocks[k].need(Instr::Load(
-                params[0].clone(),
-                self.size.clone(),
-            )),
+            f.blocks[k].need(Instr::Load(params[0].clone(), self.size.clone())),
             k,
         ));
     }
@@ -204,7 +202,7 @@ impl<C, O, T, Y, S> BackendOp<C, O, T, Y, S> for Store {
         ));
     }
 }
-impl<C, O, T, Y, S> BackendOp<C, O, T, Y, S> for Plat{
+impl<C, O, T, Y, S> BackendOp<C, O, T, Y, S> for Plat {
     fn emit(
         &self,
         ctx: &mut C,
@@ -213,10 +211,7 @@ impl<C, O, T, Y, S> BackendOp<C, O, T, Y, S> for Plat{
         k: Id<super::Block>,
     ) -> anyhow::Result<(ValueId, Id<super::Block>)> {
         return Ok((
-            f.blocks[k].need(Instr::Plat(
-                self.clone(),
-                params.iter().cloned().collect(),
-            )),
+            f.blocks[k].need(Instr::Plat(self.clone(), params.iter().cloned().collect())),
             k,
         ));
     }
@@ -286,7 +281,7 @@ impl<C, O, T, Y, S, X: BackendTerm<C, O, T, Y, S>> BackendTerm<C, O, T, Y, S>
             .enumerate()
             .map(|(i, a)| {
                 // let j = d.blocks[t2].need(Instr::Param(i));
-                d.blocks[t2].insts.insert(a.clone(),Instr::Param(i));
+                d.blocks[t2].insts.insert(a.clone(), Instr::Param(i));
                 a.clone()
             })
             .collect::<Vec<_>>();
@@ -298,7 +293,7 @@ impl<C, O, T, Y, S, X: BackendTerm<C, O, T, Y, S>> BackendTerm<C, O, T, Y, S>
             .enumerate()
             .map(|(i, a)| {
                 // d.blocks[t3].need(Instr::Param(i));
-                d.blocks[t3].insts.insert(a.clone(),Instr::Param(i));
+                d.blocks[t3].insts.insert(a.clone(), Instr::Param(i));
                 a.clone()
             })
             .collect::<Vec<_>>();
@@ -411,7 +406,9 @@ pub fn export_block<C, O: BackendOp<C, O, T, Y, S>, T: BackendTerm<C, O, T, Y, S
             Value::Alias(u, _) => m[u.value].as_ref().cloned().unwrap(),
         })
     }
-    i.blocks[ib].term.finalize(ctx, p, &m, dst, d)?;
+    if let Some(a) = i.blocks[ib].term.as_ref() {
+        a.finalize(ctx, p, &m, dst, d)?;
+    };
     return Ok(());
 }
 pub fn export_func<C, O: BackendOp<C, O, T, Y, S>, T: BackendTerm<C, O, T, Y, S>, Y, S>(

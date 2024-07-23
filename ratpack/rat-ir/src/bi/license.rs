@@ -32,7 +32,10 @@ impl<A: Taint, B: Taint> Taint for Either<A, B> {
         }
     }
 }
-impl<B: Bound> Taint for BoundOp<B> where B::O<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: Taint{
+impl<B: Bound> Taint for BoundOp<B>
+where
+    B::O<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>: Taint,
+{
     fn no_license(&mut self) {
         self.0.no_license()
     }
@@ -72,9 +75,9 @@ impl<
         y: &Y,
         new: &mut crate::Func<O2, T2, Y2, S2>,
         k: Id<crate::Block<O2, T2, Y2, S2>>,
-        sp: Option<Span>
+        sp: Option<Span>,
     ) -> anyhow::Result<(Self::Meta, Id<crate::Block<O2, T2, Y2, S2>>)> {
-        self.ctx.select(i.0.as_ref(), m, s, y, new, k,sp)
+        self.ctx.select(i.0.as_ref(), m, s, y, new, k, sp)
     }
 
     fn op(
@@ -91,7 +94,7 @@ impl<
         if !i.1 {
             o.no_license();
         }
-        self.ctx.op(i.0.as_ref(), &o, y, args, new, k,sp)
+        self.ctx.op(i.0.as_ref(), &o, y, args, new, k, sp)
     }
 
     fn term(
@@ -111,7 +114,7 @@ impl<
         new: &mut crate::Func<O2, T2, Y2, S2>,
         k: Id<crate::Block<O2, T2, Y2, S2>>,
         // old: &Func<O, T, Y, S>,
-        span: Option<Span>
+        span: Option<Span>,
     ) -> anyhow::Result<()> {
         let st2 = unsafe {
             std::mem::transmute::<_, &mut super::State<O, T, Y, S, O2, T2, Y2, S2, C>>(state)
@@ -143,7 +146,7 @@ impl<
                 let k = new.blocks.alloc(Block {
                     term_span: span.clone(),
                     insts: vec![v],
-                    term: T2::push(If {
+                    term: Some(T2::push(If {
                         val: Use {
                             value: v,
                             select: Default::default(),
@@ -160,7 +163,7 @@ impl<
                         }),
                     })
                     .map_right(|_| ())
-                    .unwrap_left(),
+                    .unwrap_left()),
                     params: vec![],
                 });
                 Ok(k)

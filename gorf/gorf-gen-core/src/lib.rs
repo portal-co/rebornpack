@@ -4,13 +4,13 @@ use chumsky::Parser;
 use gorf_core::GTerm;
 use proc_macro2::TokenStream;
 // use proc_macro::TokenStream;
-use quote::{format_ident, quote};
 use quasiquote::quasiquote;
+use quote::{format_ident, quote};
 use syn::{parse_macro_input, LitStr};
-pub struct Opts{
+pub struct Opts {
     pub path: TokenStream,
 }
-pub fn emit(a: &GTerm<String, Infallible>,opts: &Opts) -> proc_macro2::TokenStream {
+pub fn emit(a: &GTerm<String, Infallible>, opts: &Opts) -> proc_macro2::TokenStream {
     let rt = &opts.path;
     let n = {
         if let Some(s) = a.scott() {
@@ -18,7 +18,7 @@ pub fn emit(a: &GTerm<String, Infallible>,opts: &Opts) -> proc_macro2::TokenStre
                 let mut _tv = ::alloc::vec::Vec::new();
             };
             for a in s.with {
-                let a = emit(&a,opts);
+                let a = emit(&a, opts);
                 v = quote! {
                     #v;
                     _tv.push(#a)
@@ -47,11 +47,11 @@ pub fn emit(a: &GTerm<String, Infallible>,opts: &Opts) -> proc_macro2::TokenStre
             GTerm::Abs(b) => {
                 let (b, v) = b.as_ref();
                 let w = v.frees();
-                let f = w.iter().map(|a|format_ident!("{a}"));
+                let f = w.iter().map(|a| format_ident!("{a}"));
                 let mut t = quote! {
                     #(let #f = #f.clone());*
                 };
-                let v = emit(v,opts);
+                let v = emit(v, opts);
                 quote! {
                     {
                         #t;
@@ -64,7 +64,7 @@ pub fn emit(a: &GTerm<String, Infallible>,opts: &Opts) -> proc_macro2::TokenStre
             }
             GTerm::App(a) => {
                 let (a, b) = a.as_ref();
-                let a = emit(a,opts);
+                let a = emit(a, opts);
                 match b {
                     GTerm::Var(v) => {
                         let v = format_ident!("{v}");
@@ -72,7 +72,7 @@ pub fn emit(a: &GTerm<String, Infallible>,opts: &Opts) -> proc_macro2::TokenStre
                             (#a.0)(&#v)
                         }
                     }
-                    _ => quasiquote!{
+                    _ => quasiquote! {
                         {
                             let _0 = #{emit(b,opts)};
                             (#a.0)(&_0)
@@ -84,7 +84,7 @@ pub fn emit(a: &GTerm<String, Infallible>,opts: &Opts) -> proc_macro2::TokenStre
         }
     };
     let w = a.frees();
-    let f = w.iter().map(|a|format_ident!("{a}"));
+    let f = w.iter().map(|a| format_ident!("{a}"));
     let mut t = quote! {
         #(let #f = #f.clone());*
     };

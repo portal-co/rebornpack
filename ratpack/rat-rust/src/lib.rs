@@ -41,7 +41,7 @@ no_push!(
 pub struct Baked<T> {
     pub baked: T,
 }
-impl<C,T: Bake> RustOp<C> for Baked<T> {
+impl<C, T: Bake> RustOp<C> for Baked<T> {
     fn rust(
         &self,
         ctx: &mut C,
@@ -62,7 +62,7 @@ no_push!(
     type Bind<O, T, Y, S, C, R>;
 );
 impl<C, O, T, Y, S, R: ToTokens> RustOp<C> for Bind<O, T, Y, S, usize, R> {
-    fn rust(&self,ctx: &mut C, args: impl Iterator<Item = TokenStream>) -> TokenStream {
+    fn rust(&self, ctx: &mut C, args: impl Iterator<Item = TokenStream>) -> TokenStream {
         let root = &self.root;
         let t = format_ident!("_{}", self.func.index());
         let mut x = quote! {};

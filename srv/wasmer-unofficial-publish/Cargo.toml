@@ -1,0 +1,16 @@
+[package]
+name = "wasmer-unofficial-publish"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow.workspace = true
+futures.workspace = true
+hex = "0.4.3"
+reqwest = "0.12.5"
+serde_cbor = "0.11.2"
+sha2 = "0.10.8"
+tempdir = "0.3.7"
+wasmer-api = "0.0.32"
+wasmer-registry = "5.17.0"
+webc.workspace = true

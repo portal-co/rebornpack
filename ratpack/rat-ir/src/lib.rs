@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use util::PerID;
 pub mod bi;
 pub mod cfg;
+pub mod cps;
 pub mod dom;
 pub mod droppify;
 pub mod maxssa;
@@ -20,7 +21,6 @@ pub mod module;
 pub mod transform;
 pub mod util;
 pub mod var;
-pub mod cps;
 #[derive(Clone)]
 pub struct Then<A: ?Sized, B> {
     pub first: Box<A>,
@@ -28,7 +28,6 @@ pub struct Then<A: ?Sized, B> {
 }
 #[derive(Clone)]
 pub struct Unit<A>(pub A);
-
 
 pub trait Builder<O, T, Y, S> {
     type Result;
@@ -141,7 +140,10 @@ impl<O, T, Y, S, A> Builder<O, T, Y, S> for Unit<A> {
     }
 }
 #[derive(Serialize, Deserialize)]
-#[serde(bound(serialize = "O: Serialize, T: Serialize, Y: Serialize, S: Serialize", deserialize = "O: Deserialize<'de>, T: Deserialize<'de>, Y: Deserialize<'de>, S: Deserialize<'de>"))]
+#[serde(bound(
+    serialize = "O: Serialize, T: Serialize, Y: Serialize, S: Serialize",
+    deserialize = "O: Deserialize<'de>, T: Deserialize<'de>, Y: Deserialize<'de>, S: Deserialize<'de>"
+))]
 pub struct Func<O, T, Y, S> {
     pub opts: Arena<Value<O, T, Y, S>>,
     pub blocks: Arena<Block<O, T, Y, S>>,
@@ -164,7 +166,7 @@ impl<O, T, Y, S> Func<O, T, Y, S> {
         return r;
     }
 }
-impl<O, T: Default, Y, S> Default for Func<O, T, Y, S> {
+impl<O, T, Y, S> Default for Func<O, T, Y, S> {
     fn default() -> Self {
         let mut ks: Arena<Block<O, T, Y, S>> = Default::default();
         let entry = ks.alloc(Default::default());
@@ -261,7 +263,7 @@ impl<O, T, Y, S> Value<O, T, Y, S> {
 #[derive(Serialize, Deserialize)]
 pub struct Block<O, T, Y, S> {
     pub insts: Vec<Id<Value<O, T, Y, S>>>,
-    pub term: T,
+    pub term: Option<T>,
     pub params: Vec<Y>,
     pub term_span: Option<Span>,
 }
@@ -275,7 +277,7 @@ impl<O, T: Clone, Y: Clone, S> Clone for Block<O, T, Y, S> {
         }
     }
 }
-impl<O, T: Default, Y, S> Default for Block<O, T, Y, S> {
+impl<O, T, Y, S> Default for Block<O, T, Y, S> {
     fn default() -> Self {
         Self {
             insts: Default::default(),
@@ -441,7 +443,7 @@ impl<O, T: SaneTerminator<O, T, Y, S>, Y, S> Func<O, T, Y, S> {
             }
             let mut x = BTreeSet::new();
             for (c, b) in self.blocks.iter() {
-                if b.term.targets().contains(&a) {
+                if b.term.as_ref().map(|c|c.targets().contains(&a)).unwrap_or(false) {
                     x.insert(c);
                 }
             }
@@ -454,7 +456,7 @@ impl<O, T: SaneTerminator<O, T, Y, S>, Y, S> Func<O, T, Y, S> {
         }
         let mut x = BTreeSet::new();
         for (c, b) in self.blocks.iter() {
-            if b.term.targets().contains(&a) {
+            if b.term.as_ref().map(|c|c.targets().contains(&a)).unwrap_or(false)  {
                 x.insert(c);
             }
         }

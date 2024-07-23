@@ -342,7 +342,12 @@ pub mod exec {
                 }
                 Ast::Load(a, s) => {
                     a.x64_render(target, fun.bud(), backend, c, vars, syms)?;
-                    let i = [r8, r9, r10, r11, r12, r13, r14, r15].iter().enumerate().find(|a|*a.1 == target.reg()).unwrap().0;
+                    let i = [r8, r9, r10, r11, r12, r13, r14, r15]
+                        .iter()
+                        .enumerate()
+                        .find(|a| *a.1 == target.reg())
+                        .unwrap()
+                        .0;
                     match s {
                         crate::backend::Size::_8 => c.mov(
                             [r8b, r9b, r10b, r11b, r12b, r13b, r14b, r15b][i],
@@ -360,13 +365,18 @@ pub mod exec {
                     };
                     return Ok(());
                 }
-                Ast::Store(a, b,s) => {
+                Ast::Store(a, b, s) => {
                     backend.regalloc(c, |backend, c, t| {
                         target.unused(backend, |backend| {
                             a.x64_render(t, fun.bud(), backend, c, vars, syms)
                         })?;
                         b.x64_render(target, fun.bud(), backend, c, vars, syms)?;
-                        let i = [r8, r9, r10, r11, r12, r13, r14, r15].iter().enumerate().find(|a|*a.1 == t.reg()).unwrap().0;
+                        let i = [r8, r9, r10, r11, r12, r13, r14, r15]
+                            .iter()
+                            .enumerate()
+                            .find(|a| *a.1 == t.reg())
+                            .unwrap()
+                            .0;
                         match s {
                             crate::backend::Size::_8 => c.mov(
                                 target.reg() + 0,
@@ -380,7 +390,7 @@ pub mod exec {
                                 target.reg() + 0,
                                 [r8d, r9d, r10d, r11d, r12d, r13d, r14d, r15d][i],
                             )?,
-                            crate::backend::Size::_64 => c.mov(target.reg() + 0,t.reg())?,
+                            crate::backend::Size::_64 => c.mov(target.reg() + 0, t.reg())?,
                         };
                         // c.mov(target.reg() + 0, t.reg())?;
                         return Ok(());
@@ -534,13 +544,13 @@ pub mod exec {
                 }
                 Ast::Data(d) => {
                     let mut l = c.create_label();
-                    c.lea(target.reg(),l.into())?;
+                    c.lea(target.reg(), l.into())?;
                     c.call(target.reg())?;
                     c.db(d.as_ref())?;
                     c.set_label(&mut l)?;
                     c.pop(target.reg())?;
                     return Ok(());
-                },
+                }
             }
         }
     }

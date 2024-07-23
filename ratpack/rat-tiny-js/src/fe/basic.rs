@@ -92,11 +92,11 @@ impl<O, T, Y, S> SaneTerminator<O, T, Y, S> for BasicTinyTerm<O, T, Y, S> {
         }
     }
 }
-pub struct Basic{}
-impl Bound for Basic{
-    type O<O, T, Y, S> = BasicTinyOp<O,T,Y,S>;
+pub struct Basic {}
+impl Bound for Basic {
+    type O<O, T, Y, S> = BasicTinyOp<O, T, Y, S>;
 
-    type T<O, T, Y, S> = BasicTinyTerm<O,T,Y,S>;
+    type T<O, T, Y, S> = BasicTinyTerm<O, T, Y, S>;
 
     type Y<O, T, Y, S> = ();
 

@@ -1,11 +1,14 @@
 use std::{iter::once, sync::Arc};
 
 use rat_ast::export::{rust::RustOp, CffAst, ExportAst, ExportTerm, ReloopAst, ToIdAst};
-use rat_ir::util::{BinOp, Catch, If, Push};
+use rat_ir::{
+    util::{BinOp, Catch, If, Push, Ret},
+    Use,
+};
 use swc_core::{
     atoms::Atom,
     base::{Compiler, PrintArgs},
-    common::{SourceMap, Span, Spanned},
+    common::{SourceMap, Span, Spanned, SyntaxContext},
     ecma::ast::{
         AssignExpr, AssignOp, BinExpr, BinaryOp, BindingIdent, BlockStmt, Bool, BreakStmt,
         CatchClause, ContinueStmt, Decl, ExportDecl, ExportNamedSpecifier, ExportSpecifier, Expr,
@@ -14,6 +17,10 @@ use swc_core::{
         UnaryExpr, UnaryOp, WhileStmt,
     },
 };
+pub fn id_new(a: Atom, s: Span) -> Ident {
+    return Ident::new(a, s, SyntaxContext::empty());
+}
+
 #[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct WasmBindgen<X>(pub X);
 impl<C: Spanned, X: JsOp<C>> RustOp<C> for WasmBindgen<X> {
@@ -29,9 +36,9 @@ impl<C: Spanned, X: JsOp<C>> RustOp<C> for WasmBindgen<X> {
             ctx,
             args.iter()
                 .enumerate()
-                .map(|a| Expr::Ident(Ident::new(format!("${}", a.0).into(), s.clone()))),
+                .map(|a| Expr::Ident(id_new(format!("${}", a.0).into(), s.clone()))),
         );
-        let orig = Ident::new("go".into(), s.clone());
+        let orig = id_new("go".into(), s.clone());
         let js_header = Module {
             span: s.clone(),
             body: vec![ModuleItem::ModuleDecl(
@@ -44,7 +51,7 @@ impl<C: Spanned, X: JsOp<C>> RustOp<C> for WasmBindgen<X> {
                             params: args
                                 .iter()
                                 .enumerate()
-                                .map(|a| Ident::new(format!("${}", a.0).into(), s.clone()))
+                                .map(|a| id_new(format!("${}", a.0).into(), s.clone()))
                                 .map(|a| Param {
                                     span: s.clone(),
                                     decorators: vec![],
@@ -53,17 +60,12 @@ impl<C: Spanned, X: JsOp<C>> RustOp<C> for WasmBindgen<X> {
                                 .collect(),
                             decorators: vec![],
                             span: s.clone(),
-                            body: Some(BlockStmt {
-                                span: s.clone(),
-                                stmts: vec![Stmt::Return(ReturnStmt {
-                                    span: s.clone(),
-                                    arg: Some(Box::new(js_body)),
-                                })],
-                            }),
+                            body: Some(BlockStmt {span:s.clone(),stmts:vec![Stmt::Return(ReturnStmt{span:s.clone(),arg:Some(Box::new(js_body)),})], ctxt: SyntaxContext::empty() }),
                             is_generator: false,
                             is_async: false,
                             type_params: None,
                             return_type: None,
+                            ctxt: SyntaxContext::empty(),
                         }),
                     }),
                 }),
@@ -128,7 +130,7 @@ impl<C: Spanned, O: JsOp<C>, T, Y: JsTy<C>, S: JsSel<C>> ExportAst<C, O, T, S, Y
     type Var = Atom;
 
     fn get(ctx: &mut C, var: Self::Var, y: &Y) -> Self {
-        Self::Expr(Expr::Ident(Ident::new(var, ctx.span())))
+        Self::Expr(Expr::Ident(id_new(var, ctx.span())))
     }
 
     fn assign(&self, ctx: &mut C, var: Self::Var, y: &Y) -> Self {
@@ -136,7 +138,7 @@ impl<C: Spanned, O: JsOp<C>, T, Y: JsTy<C>, S: JsSel<C>> ExportAst<C, O, T, S, Y
             span: ctx.span(),
             op: AssignOp::Assign,
             left: swc_core::ecma::ast::AssignTarget::Simple(
-                swc_core::ecma::ast::SimpleAssignTarget::Ident(BindingIdent::from(Ident::new(
+                swc_core::ecma::ast::SimpleAssignTarget::Ident(BindingIdent::from(id_new(
                     var,
                     ctx.span(),
                 ))),
@@ -192,7 +194,7 @@ impl<C: Spanned, O: JsOp<C>, T, Y: JsTy<C>, S: JsSel<C>> CffAst<C, O, T, S, Y> f
             ctx,
             once(ExprOrStmt::Stmt(Stmt::Break(BreakStmt {
                 span: Span::dummy_with_cmt(),
-                label: Some(Ident::new("cff".into(), s)),
+                label: Some(id_new("cff".into(), s)),
             }))),
         );
         return a;
@@ -204,7 +206,7 @@ impl<C: Spanned, O: JsOp<C>, T, Y: JsTy<C>, S: JsSel<C>> CffAst<C, O, T, S, Y> f
             op: AssignOp::Assign,
             left: swc_core::ecma::ast::AssignTarget::Simple(
                 swc_core::ecma::ast::SimpleAssignTarget::Ident(
-                    Ident::new(Atom::from("cff"), ctx.span()).into(),
+                    id_new(Atom::from("cff"), ctx.span()).into(),
                 ),
             ),
             right: Box::new(Expr::Lit(Lit::Num(a.into()))),
@@ -214,10 +216,10 @@ impl<C: Spanned, O: JsOp<C>, T, Y: JsTy<C>, S: JsSel<C>> CffAst<C, O, T, S, Y> f
     fn switch(ctx: &mut C, m: &std::collections::BTreeMap<usize, Self>) -> Self {
         return Self::Stmt(Stmt::Labeled(LabeledStmt {
             span: ctx.span(),
-            label: Ident::new("cff".into(), ctx.span()),
+            label: id_new("cff".into(), ctx.span()),
             body: Box::new(Stmt::Switch(SwitchStmt {
                 span: ctx.span(),
-                discriminant: Box::new(Expr::Ident(Ident::new("cff".into(), ctx.span()))),
+                discriminant: Box::new(Expr::Ident(id_new("cff".into(), ctx.span()))),
                 cases: m
                     .iter()
                     .map(|(a, y)| SwitchCase {
@@ -238,21 +240,21 @@ impl<C: Spanned, O: JsOp<C>, T, Y: JsTy<C>, S: JsSel<C>> ReloopAst<C, O, T, S, Y
     fn r#break(ctx: &mut C, id: u16) -> Self {
         ExprOrStmt::Stmt(Stmt::Break(BreakStmt {
             span: ctx.span(),
-            label: Some(Ident::new(format!("l{id}").into(), ctx.span())),
+            label: Some(id_new(format!("l{id}").into(), ctx.span())),
         }))
     }
 
     fn r#continue(ctx: &mut C, id: u16) -> Self {
         ExprOrStmt::Stmt(Stmt::Continue(ContinueStmt {
             span: ctx.span(),
-            label: Some(Ident::new(format!("l{id}").into(), ctx.span())),
+            label: Some(id_new(format!("l{id}").into(), ctx.span())),
         }))
     }
 
     fn r#loop(&self, ctx: &mut C, id: u16) -> Self {
         ExprOrStmt::Stmt(Stmt::Labeled(LabeledStmt {
             span: ctx.span(),
-            label: Ident::new(format!("l{id}").into(), ctx.span()),
+            label: id_new(format!("l{id}").into(), ctx.span()),
             body: Box::new(Stmt::While(WhileStmt {
                 span: ctx.span(),
                 test: Box::new(Expr::Lit(Lit::Bool(Bool {
@@ -290,9 +292,61 @@ impl<
         };
         let i = ExprOrStmt::Stmt(Stmt::If(IfStmt {
             span: ctx.span(),
-            test: Box::new(Expr::Ident(Ident::new(test, ctx.span()))),
+            test: Box::new(Expr::Ident(id_new(test, ctx.span()))),
             cons: Box::new(t.stmt()),
             alt: e.map(|x| Box::new(x.stmt())),
+        }));
+        <ExprOrStmt as ExportAst<C, O, T, S, Y>>::append(&mut body, ctx, once(i));
+        return Ok(body);
+    }
+}
+impl<C: Spanned, O: JsOp<C>, T, Y: JsTy<C>, S: JsSel<C>> ExportTerm<ExprOrStmt, C, O, T, Y, S>
+    for Ret<Use<O, T, Y, S>>
+{
+    fn go(
+        &self,
+        ctx: &mut C,
+        mut s: impl FnMut(&mut C, id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> ExprOrStmt,
+        f: &rat_ir::Func<O, T, Y, S>,
+        mut body: ExprOrStmt,
+    ) -> anyhow::Result<ExprOrStmt> {
+        let test = self.wrapped.value.ssa::<C, O, T, S, Y, ExprOrStmt>();
+        // let u = <ExprOrStmt as ExportAst<C, O, T, S, Y>>::unit(ctx);
+        // let t = self.then.go(ctx, &mut s, f, u)?;
+        // let u = <ExprOrStmt as ExportAst<C, O, T, S, Y>>::unit(ctx);
+        // let e = match self.r#else.as_ref() {
+        //     None => None,
+        //     Some(x) => Some(x.go(ctx, s, f, u)?),
+        // };
+        let i = ExprOrStmt::Stmt(Stmt::Return(ReturnStmt {
+            span: ctx.span(),
+            arg: Some(Box::new(Expr::Ident(id_new(test, ctx.span())))),
+        }));
+        <ExprOrStmt as ExportAst<C, O, T, S, Y>>::append(&mut body, ctx, once(i));
+        return Ok(body);
+    }
+}
+impl<C: Spanned, O: JsOp<C>, T, Y: JsTy<C>, S: JsSel<C>> ExportTerm<ExprOrStmt, C, O, T, Y, S>
+    for Ret<()>
+{
+    fn go(
+        &self,
+        ctx: &mut C,
+        mut s: impl FnMut(&mut C, id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> ExprOrStmt,
+        f: &rat_ir::Func<O, T, Y, S>,
+        mut body: ExprOrStmt,
+    ) -> anyhow::Result<ExprOrStmt> {
+        // let test = self.wrapped.value.ssa::<C, O, T, S, Y, ExprOrStmt>();
+        // let u = <ExprOrStmt as ExportAst<C, O, T, S, Y>>::unit(ctx);
+        // let t = self.then.go(ctx, &mut s, f, u)?;
+        // let u = <ExprOrStmt as ExportAst<C, O, T, S, Y>>::unit(ctx);
+        // let e = match self.r#else.as_ref() {
+        //     None => None,
+        //     Some(x) => Some(x.go(ctx, s, f, u)?),
+        // };
+        let i = ExprOrStmt::Stmt(Stmt::Return(ReturnStmt {
+            span: ctx.span(),
+            arg: None,
         }));
         <ExprOrStmt as ExportAst<C, O, T, S, Y>>::append(&mut body, ctx, once(i));
         return Ok(body);
@@ -319,7 +373,7 @@ impl<
             return self.wrapped.go(ctx, s, f, body);
         };
         let kx = self.wrapped.go(ctx, &mut s, f, body)?;
-        let i = Ident::new("_catch".into(), ctx.span());
+        let i = id_new("_catch".into(), ctx.span());
         let t = ExprOrStmt::Expr(Expr::Ident(i.clone()));
         let t = s.target(ctx, f, k, vec![t]);
         Ok(ExprOrStmt::Stmt(Stmt::Try(Box::new(TryStmt {

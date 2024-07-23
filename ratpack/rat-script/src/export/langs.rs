@@ -42,9 +42,9 @@ impl CLike for AssemblyScript {
 }
 impl<T: Emit<AssemblyScript>> Emit<AssemblyScript> for Vec<T> {
     fn emit(&self) -> AssemblyScript {
-        if let [a] = self.as_slice(){
+        if let [a] = self.as_slice() {
             return a.emit();
-        } 
+        }
         AssemblyScript(format!(
             "{{{}}}",
             self.iter()
@@ -83,7 +83,7 @@ impl CLike for Java {
         Self(format!("l{id}: while(1){{{}}};", self.0))
     }
 }
-impl<C> ScrOp<C,ECMAScript> for BinOp {
+impl<C> ScrOp<C, ECMAScript> for BinOp {
     fn op(&self, ctx: &mut C, mut args: impl Iterator<Item = ECMAScript>) -> ECMAScript {
         let arg0 = args.next().unwrap();
         let arg1 = args.next().unwrap();
@@ -104,8 +104,8 @@ impl<C> ScrOp<C,ECMAScript> for BinOp {
         })
     }
 }
-impl<C> ScrOp<C,ECMAScript> for ObjectOriented {
-    fn op(&self,ctx: &mut C, mut args: impl Iterator<Item = ECMAScript>) -> ECMAScript {
+impl<C> ScrOp<C, ECMAScript> for ObjectOriented {
+    fn op(&self, ctx: &mut C, mut args: impl Iterator<Item = ECMAScript>) -> ECMAScript {
         ECMAScript(match self {
             ObjectOriented::NewObj(m) => format!(
                 "new {m}({})",
@@ -123,8 +123,8 @@ impl<C> ScrOp<C,ECMAScript> for ObjectOriented {
         })
     }
 }
-impl<X> ScrOp<X,C> for BinOp {
-    fn op(&self,ctx: &mut X, mut args: impl Iterator<Item = C>) -> C {
+impl<X> ScrOp<X, C> for BinOp {
+    fn op(&self, ctx: &mut X, mut args: impl Iterator<Item = C>) -> C {
         let arg0 = args.next().unwrap();
         let arg1 = args.next().unwrap();
         C(match self {
@@ -144,8 +144,8 @@ impl<X> ScrOp<X,C> for BinOp {
         })
     }
 }
-impl<C> ScrOp<C,Java> for BinOp {
-    fn op(&self,ctx: &mut C, mut args: impl Iterator<Item = Java>) -> Java {
+impl<C> ScrOp<C, Java> for BinOp {
+    fn op(&self, ctx: &mut C, mut args: impl Iterator<Item = Java>) -> Java {
         let arg0 = args.next().unwrap();
         let arg1 = args.next().unwrap();
         Java(match self {
@@ -165,8 +165,8 @@ impl<C> ScrOp<C,Java> for BinOp {
         })
     }
 }
-impl<C> ScrOp<C,Java> for ObjectOriented {
-    fn op(&self,ctx: &mut C, mut args: impl Iterator<Item = Java>) -> Java {
+impl<C> ScrOp<C, Java> for ObjectOriented {
+    fn op(&self, ctx: &mut C, mut args: impl Iterator<Item = Java>) -> Java {
         Java(match self {
             ObjectOriented::NewObj(m) => format!(
                 "new {m}({})",
@@ -184,19 +184,21 @@ impl<C> ScrOp<C,Java> for ObjectOriented {
         })
     }
 }
-#[derive(Clone, Copy, Debug,serde::Serialize,serde::Deserialize)]
+#[derive(Clone, Copy, Debug, serde::Serialize, serde::Deserialize)]
 pub struct WasmBindgen<X>(pub X);
-impl<C,X: ScrOp<C,ECMAScript>> RustOp<C> for WasmBindgen<X> {
+impl<C, X: ScrOp<C, ECMAScript>> RustOp<C> for WasmBindgen<X> {
     fn rust(
         &self,
         ctx: &mut C,
         args: impl Iterator<Item = proc_macro2::TokenStream>,
     ) -> proc_macro2::TokenStream {
         let args: Vec<_> = args.collect();
-        let js_body = self.0.op(ctx,args
-            .iter()
-            .enumerate()
-            .map(|a| ECMAScript(format!("${}", a.0))));
+        let js_body = self.0.op(
+            ctx,
+            args.iter()
+                .enumerate()
+                .map(|a| ECMAScript(format!("${}", a.0))),
+        );
         let js_header = format!(
             "export function go({}){{return {js_body};}}",
             args.iter()
@@ -241,19 +243,19 @@ impl CLike for Swift {
         Self(format!("l{id}: while(1){{{}}};", self.0))
     }
 }
-impl<C,O: ScrOp<C,Java>, T, Y, S, W: ExportTerm<ScrCLikeAst<Java>,C, O, T, Y, S>>
-    ExportTerm<ScrCLikeAst<Java>,C, O, T, Y, S> for Catch<O, T, Y, S, W>
+impl<C, O: ScrOp<C, Java>, T, Y, S, W: ExportTerm<ScrCLikeAst<Java>, C, O, T, Y, S>>
+    ExportTerm<ScrCLikeAst<Java>, C, O, T, Y, S> for Catch<O, T, Y, S, W>
 {
     fn go(
         &self,
         ctx: &mut C,
-        mut s: impl FnMut(&mut C,id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> ScrCLikeAst<Java>,
+        mut s: impl FnMut(&mut C, id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> ScrCLikeAst<Java>,
         f: &rat_ir::Func<O, T, Y, S>,
         body: ScrCLikeAst<Java>,
     ) -> anyhow::Result<ScrCLikeAst<Java>> {
         use rat_ast::export::EmitTarget;
         let Some(k) = self.catch.as_ref() else {
-            return self.wrapped.go(ctx,s, f, body);
+            return self.wrapped.go(ctx, s, f, body);
         };
         Ok(ScrCLikeAst(
             format!(
@@ -262,26 +264,32 @@ impl<C,O: ScrOp<C,Java>, T, Y, S, W: ExportTerm<ScrCLikeAst<Java>,C, O, T, Y, S>
                 }}catch(Throwable _catch){{
                     {}
                 }}",
-                self.wrapped.go(ctx,&mut s, f, body)?.0,
-                s.target(ctx,f, k, vec![ScrCLikeAst(format!("_catch").into())])
+                self.wrapped.go(ctx, &mut s, f, body)?.0,
+                s.target(ctx, f, k, vec![ScrCLikeAst(format!("_catch").into())])
             )
             .into(),
         ))
     }
 }
-impl<C,O: ScrOp<C,ECMAScript>, T, Y, S, W: ExportTerm<ScrCLikeAst<ECMAScript>,C, O, T, Y, S>>
-    ExportTerm<ScrCLikeAst<ECMAScript>,C, O, T, Y, S> for Catch<O, T, Y, S, W>
+impl<
+        C,
+        O: ScrOp<C, ECMAScript>,
+        T,
+        Y,
+        S,
+        W: ExportTerm<ScrCLikeAst<ECMAScript>, C, O, T, Y, S>,
+    > ExportTerm<ScrCLikeAst<ECMAScript>, C, O, T, Y, S> for Catch<O, T, Y, S, W>
 {
     fn go(
         &self,
         ctx: &mut C,
-        mut s: impl FnMut(&mut C,id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> ScrCLikeAst<ECMAScript>,
+        mut s: impl FnMut(&mut C, id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> ScrCLikeAst<ECMAScript>,
         f: &rat_ir::Func<O, T, Y, S>,
         body: ScrCLikeAst<ECMAScript>,
     ) -> anyhow::Result<ScrCLikeAst<ECMAScript>> {
         use rat_ast::export::EmitTarget;
         let Some(k) = self.catch.as_ref() else {
-            return self.wrapped.go(ctx,s, f, body);
+            return self.wrapped.go(ctx, s, f, body);
         };
         Ok(ScrCLikeAst(
             format!(
@@ -290,26 +298,26 @@ impl<C,O: ScrOp<C,ECMAScript>, T, Y, S, W: ExportTerm<ScrCLikeAst<ECMAScript>,C,
                 }}catch(_catch){{
                     {}
                 }}",
-                self.wrapped.go(ctx,&mut s, f, body)?.0,
-                s.target(ctx,f, k, vec![ScrCLikeAst(format!("_catch").into())])
+                self.wrapped.go(ctx, &mut s, f, body)?.0,
+                s.target(ctx, f, k, vec![ScrCLikeAst(format!("_catch").into())])
             )
             .into(),
         ))
     }
 }
-impl<X,O: ScrOp<X,C>, T, Y, S, W: ExportTerm<ScrCLikeAst<C>,X, O, T, Y, S>>
-    ExportTerm<ScrCLikeAst<C>,X, O, T, Y, S> for Catch<O, T, Y, S, W>
+impl<X, O: ScrOp<X, C>, T, Y, S, W: ExportTerm<ScrCLikeAst<C>, X, O, T, Y, S>>
+    ExportTerm<ScrCLikeAst<C>, X, O, T, Y, S> for Catch<O, T, Y, S, W>
 {
     fn go(
         &self,
         ctx: &mut X,
-        mut s: impl FnMut(&mut X,id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> ScrCLikeAst<C>,
+        mut s: impl FnMut(&mut X, id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> ScrCLikeAst<C>,
         f: &rat_ir::Func<O, T, Y, S>,
         body: ScrCLikeAst<C>,
     ) -> anyhow::Result<ScrCLikeAst<C>> {
         use rat_ast::export::EmitTarget;
         let Some(k) = self.catch.as_ref() else {
-            return self.wrapped.go(ctx,s, f, body);
+            return self.wrapped.go(ctx, s, f, body);
         };
         Ok(ScrCLikeAst(
             format!(
@@ -318,7 +326,7 @@ impl<X,O: ScrOp<X,C>, T, Y, S, W: ExportTerm<ScrCLikeAst<C>,X, O, T, Y, S>>
                 }}catch(...){{
                     {}
                 }}",
-                self.wrapped.go(ctx,&mut s, f, body)?.0,
+                self.wrapped.go(ctx, &mut s, f, body)?.0,
                 s.target(
                     ctx,
                     f,

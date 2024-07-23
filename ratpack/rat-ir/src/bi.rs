@@ -139,7 +139,7 @@ pub trait Tracer<O, T, Y, S, O2, T2, Y2, S2>: Sized {
             &mut State<O, T, Y, S, O2, T2, Y2, S2, Self>,
             &mut Func<O2, T2, Y2, S2>,
             &BlockTarget<O, T, Y, S>,
-            
+
             Self::Instance,
         ) -> anyhow::Result<Id<Block<O2, T2, Y2, S2>>>,
         valmap: &BTreeMap<Id<crate::Value<O, T, Y, S>>, Arc<Self::Meta>>,
@@ -160,7 +160,7 @@ pub fn trace_func<O, T, Y, S, O2, T2: Default, Y2, S2, C: Tracer<O, T, Y, S, O2,
     k: Id<Block<O, T, Y, S>>,
     i: C::Instance,
 ) -> anyhow::Result<()> {
-    return replace_with::replace_with_or_abort_and_return(tracer, move|tracer|{
+    return replace_with::replace_with_or_abort_and_return(tracer, move |tracer| {
         // let mut x = Default::default();
         let mut state = State {
             tracer,
@@ -172,7 +172,7 @@ pub fn trace_func<O, T, Y, S, O2, T2: Default, Y2, S2, C: Tracer<O, T, Y, S, O2,
         };
         new.entry = k;
         return (Ok(()), state.tracer);
-    })
+    });
 }
 pub fn trace_block<O, T, Y, S, O2, T2: Default, Y2, S2, C: Tracer<O, T, Y, S, O2, T2, Y2, S2>>(
     state: &mut State<O, T, Y, S, O2, T2, Y2, S2, C>,
@@ -249,17 +249,19 @@ pub fn trace_block<O, T, Y, S, O2, T2: Default, Y2, S2, C: Tracer<O, T, Y, S, O2
             },
         );
     }
-    C::term(
-        state,
-        &i,
-        &old.blocks[k].term,
-        |a, new, b, c| trace_block(a, old, new, b.block, c),
-        &values,
-        new,
-        w,
-        // old,
-        old.blocks[k].term_span.clone(),
-    )?;
+    if let Some(t) = old.blocks[k].term.as_ref() {
+        C::term(
+            state,
+            &i,
+            t,
+            |a, new, b, c| trace_block(a, old, new, b.block, c),
+            &values,
+            new,
+            w,
+            // old,
+            old.blocks[k].term_span.clone(),
+        )?;
+    }
 
     Ok(v)
 }

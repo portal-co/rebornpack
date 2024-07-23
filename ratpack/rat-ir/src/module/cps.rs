@@ -14,12 +14,16 @@ pub struct ModCtx<O, T, Y, S, D, O2, T2, Y2, S2, D2, C> {
     pub data: PerID<D, Option<Id<D2>>>,
     pub wrapped: C,
 }
-impl<O, T, Y, S, D, O2, T2, Y2, S2, D2, C>  ModCtx<O, T, Y, S, D, O2, T2, Y2, S2, D2, C>{
-    pub fn bud<X>(&self, d: X) -> ModCtx<O, T, Y, S, D, O2, T2, Y2, S2, D2, X>{
-        ModCtx { funcs: self.funcs.clone(), legacy: self.legacy.clone(), data: self.data.clone(), wrapped: d }
+impl<O, T, Y, S, D, O2, T2, Y2, S2, D2, C> ModCtx<O, T, Y, S, D, O2, T2, Y2, S2, D2, C> {
+    pub fn bud<X>(&self, d: X) -> ModCtx<O, T, Y, S, D, O2, T2, Y2, S2, D2, X> {
+        ModCtx {
+            funcs: self.funcs.clone(),
+            legacy: self.legacy.clone(),
+            data: self.data.clone(),
+            wrapped: d,
+        }
     }
 }
-
 
 impl<O, T, Y, S, D, O2, T2, Y2, S2, D2, C> HasModuleFuncs<O, T, Y, S, O2, T2, Y2, S2>
     for ModCtx<O, T, Y, S, D, O2, T2, Y2, S2, D2, C>
@@ -69,7 +73,7 @@ pub fn transform_mod<O, T, Y, S, D, O2, T2: Default, Y2, S2, D2, C>(
     }
     return Ok(c);
 }
-pub trait TransparentModCtx<O, T, Y, S, D, O2, T2, Y2, S2, D2, C>{
+pub trait TransparentModCtx<O, T, Y, S, D, O2, T2, Y2, S2, D2, C> {
     fn transparent(ctx: &mut ModCtx<O, T, Y, S, D, O2, T2, Y2, S2, D2, C>) -> &mut Self;
 }
 pub fn tracer<
@@ -97,7 +101,7 @@ pub fn tracer<
     Id<Block<O, T, Y, S>>,
     &mut Module<O2, T2, Y2, S2, D2>,
     &mut ModCtx<O, T, Y, S, D, O2, T2, Y2, S2, D2, C>,
-) -> anyhow::Result<Func<O2, T2, Y2, S2>>{
+) -> anyhow::Result<Func<O2, T2, Y2, S2>> {
     move |f, b, m, c| {
         let mut c = go(c.bud(()))?;
         let mut f2 = Func::default();
@@ -105,4 +109,3 @@ pub fn tracer<
         return Ok(f2);
     }
 }
-

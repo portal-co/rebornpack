@@ -3,15 +3,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use anyhow::{Context, Ok};
 // use goatf2::JustNormalCFF;
 // use crate::more::Flix;
-use waffle::{SignatureData, Value};
 use waffle::{
     entity::{EntityRef, PerEntity},
     passes, BlockTarget, Func, FuncDecl, FunctionBody, Module, Operator, Signature, Table,
     Terminator, Type, ValueDef,
 };
+use waffle::{SignatureData, Value};
 
 use crate::fcopy::DontObf;
 pub mod fcopy;
+pub mod unswitch;
+
 
 pub fn results_ref_2(f: &mut FunctionBody, c: Value) -> Vec<Value> {
     let c = f.resolve_and_update_alias(c);

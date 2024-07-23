@@ -1,11 +1,12 @@
 [workspace]
-members=["ratpack/rat-waffle", "ratpack/rat-ir", "ratpack/rat-ast", "ratpack/rat-script", "ratpack/skulk", "ratpack/rat-tiny-js", "ratpack/rat-rust", "ratpack/rat-sleigh", "ratpack/rat-debug","gorf/gorf-core","gorf/gorf-kiselyov","gorf/gorf-gen-core","gorf/gorf-gen-macro","gorf/lambda-rt","gorf/lambda-rt-test","jetski", "isovariant", "ratpack/rat-waffle-test","shellcode/proby", "rave/rave", "more_waffle/tcore", "ratpack/rat-c-api","marl", "ratpack/rat-stackvm"] # , "trigon/trg-core", "private/cluejme","private/trg-x"
+members=["ratpack/rat-waffle", "ratpack/rat-ir", "ratpack/rat-ast", "ratpack/rat-script", "ratpack/skulk", "ratpack/rat-tiny-js", "ratpack/rat-rust", "ratpack/rat-sleigh", "ratpack/rat-debug","gorf/gorf-core","gorf/gorf-kiselyov","gorf/gorf-gen-core","gorf/gorf-gen-macro","gorf/lambda-rt","gorf/lambda-rt-test","jetski", "isovariant", "ratpack/rat-waffle-test","shellcode/proby", "rave/rave", "more_waffle/tcore", "ratpack/rat-c-api","marl", "ratpack/rat-stackvm", "srv/wasmer-unofficial-publish", "ratpack/rat-tiny-js-test"] # , "trigon/trg-core", "private/cluejme","private/trg-x"
 # "axle/axle"
 # "axle/axle-waffle"
 # "axle/axle-ast", 
 resolver="2"
 
 [workspace.dependencies]
+webc = { version = "6.0.0-rc1", default-features = false, features = ["package"] }
 cxx = "1.0"
 noak="0.6.0"
 zip = "2.1.1"
@@ -101,17 +102,16 @@ hyper-futures = "0.1.1"
 axum = "0.7.5"
 fix-hidden-lifetime-bug = "=0.2.2"
 
-swc_core={version="0.92.5",features=[    "allocator_node",
+swc_core={version="0.99.3",features=[    "allocator_node",
     "base",
     "base_node",
     "common",
     "ecma_visit",
-    "ecma_transforms",
     "bundler",
     "ecma_loader",
     "ecma_ast",
     "trace_macro"]}
-swc_ecma_utils = "0.128.1"
+swc_ecma_utils = "0.133.2"
 
 
 [profile.release]

@@ -1,5 +1,5 @@
 use std::{
-    iter::once,
+    iter::{empty, once},
     marker::PhantomData,
     ops::{Index, IndexMut},
 };
@@ -10,9 +10,12 @@ use id_arena::Id;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    bi::NormalTermBi, module::TailCall, transform::{ctx::NormalTermIn, NormalTerm}, BlockTarget, Bound, Call, SaneTerminator, Use, Value
+    bi::NormalTermBi,
+    module::TailCall,
+    transform::{ctx::NormalTermIn, NormalTerm},
+    BlockTarget, Bound, Call, SaneTerminator, Use, Value,
 };
-#[derive(Debug,Serialize,Deserialize)]
+#[derive(Debug, Serialize, Deserialize)]
 pub struct PerID<A, B> {
     pub data: Vec<B>,
     default: B,
@@ -131,23 +134,23 @@ impl<O, T, Y, S, W: SaneTerminator<O, T, Y, S>> SaneTerminator<O, T, Y, S> for I
             .chain(self.r#else.iter_mut().flat_map(|b| b.t2s_mut()))
     }
 }
-pub trait Bt<O, T, Y, S>: Push<BlockTarget<O,T,Y,S>> {
+pub trait Bt<O, T, Y, S>: Push<BlockTarget<O, T, Y, S>> {
     fn bt(x: BlockTarget<O, T, Y, S>) -> Self;
 }
-impl<O,T,Y,S,A: Push<BlockTarget<O,T,Y,S>>> Bt<O,T,Y,S> for A{
+impl<O, T, Y, S, A: Push<BlockTarget<O, T, Y, S>>> Bt<O, T, Y, S> for A {
     fn bt(x: BlockTarget<O, T, Y, S>) -> Self {
-        Self::push(x).map_right(|_|()).unwrap_left()
+        Self::push(x).map_right(|_| ()).unwrap_left()
     }
 }
 pub trait Extract<A> {
     fn extract(&self) -> A;
 }
-impl<T: Clone> Extract<Vec<T>> for Vec<T>{
+impl<T: Clone> Extract<Vec<T>> for Vec<T> {
     fn extract(&self) -> Vec<T> {
         self.clone()
     }
 }
-impl<T: Clone> Extract<Option<T>> for Option<T>{
+impl<T: Clone> Extract<Option<T>> for Option<T> {
     fn extract(&self) -> Option<T> {
         self.clone()
     }
@@ -243,19 +246,31 @@ no_push!(
 no_push!(
     type Option<T>;
 );
-#[derive(Clone,Serialize,Deserialize)]
+#[derive(Clone, Serialize, Deserialize)]
 pub struct DropGuest<Y> {
-    pub ty: Y
+    pub ty: Y,
 }
 no_push!(
     type DropGuest<Y>;
 );
-no_push!(type u64;);
-no_push!(type u32;);
-no_push!(type u16;);
-no_push!(type u8;);
-no_push!(type usize;);
-no_push!(type Bytes;);
+no_push!(
+    type u64;
+);
+no_push!(
+    type u32;
+);
+no_push!(
+    type u16;
+);
+no_push!(
+    type u8;
+);
+no_push!(
+    type usize;
+);
+no_push!(
+    type Bytes;
+);
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct Catch<O, T, Y, S, W> {
     pub wrapped: W,
@@ -380,16 +395,120 @@ impl<
         }
     }
 }
-pub struct Merge<A,B>{
-    pub a: A,
-    pub b: B,
+// pub struct Merge<A, B> {
+//     pub a: A,
+//     pub b: B,
+// }
+impl<A: Bound, B: Bound> Bound for Either<A, B> {
+    type O<O, T, Y, S> = Either<A::O<O, T, Y, S>, B::O<O, T, Y, S>>;
+
+    type T<O, T, Y, S> = Either<A::T<O, T, Y, S>, B::T<O, T, Y, S>>;
+
+    type Y<O, T, Y, S> = Either<A::Y<O, T, Y, S>, B::Y<O, T, Y, S>>;
+
+    type S<O, T, Y, S> = Either<A::S<O, T, Y, S>, B::S<O, T, Y, S>>;
 }
-impl<A: Bound,B: Bound> Bound for Merge<A,B>{
-    type O<O, T, Y, S> = Either<A::O<O,T,Y,S>,B::O<O,T,Y,S>>;
+pub struct Ret<T>{
+    pub wrapped: T,
+}
+no_push!(type Ret<T>;);
+pub trait RetVals<O,T,Y,S>{
+    fn rets<'a>(&'a self) -> impl Iterator<Item = &'a Use<O,T,Y,S>> + 'a    where
+    O: 'a,
+    T: 'a,
+    Y: 'a,
+    S: 'a;
+    fn rets_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut Use<O,T,Y,S>> + 'a     where
+    O: 'a,
+    T: 'a,
+    Y: 'a,
+    S: 'a;
+}
+impl<O,T,Y,S> RetVals<O,T,Y,S> for Use<O,T,Y,S>{
+    fn rets<'a>(&'a self) -> impl Iterator<Item = &'a Use<O,T,Y,S>> + 'a    where
+    O: 'a,
+    T: 'a,
+    Y: 'a,
+    S: 'a {
+        once(self)
+    }
 
-    type T<O, T, Y, S> = Either<A::T<O,T,Y,S>,B::T<O,T,Y,S>>;
+    fn rets_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut Use<O,T,Y,S>> + 'a     where
+    O: 'a,
+    T: 'a,
+    Y: 'a,
+    S: 'a {
+        once(self)
+    }
+}
+impl<O,T,Y,S, W: RetVals<O,T,Y,S>> RetVals<O,T,Y,S> for Vec<W>{
+    fn rets<'a>(&'a self) -> impl Iterator<Item = &'a Use<O,T,Y,S>> + 'a    where
+    O: 'a,
+    T: 'a,
+    Y: 'a,
+    S: 'a {
+        self.iter().flat_map(|x|x.rets())
+    }
 
-    type Y<O, T, Y, S> = Either<A::Y<O,T,Y,S>,B::Y<O,T,Y,S>>;
+    fn rets_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut Use<O,T,Y,S>> + 'a     where
+    O: 'a,
+    T: 'a,
+    Y: 'a,
+    S: 'a {
+        self.iter_mut().flat_map(|x|x.rets_mut())
+    }
+}
+impl<O,T,Y,S> RetVals<O,T,Y,S> for (){
+    fn rets<'a>(&'a self) -> impl Iterator<Item = &'a Use<O,T,Y,S>> + 'a    where
+    O: 'a,
+    T: 'a,
+    Y: 'a,
+    S: 'a {
+        empty()
+    }
 
-    type S<O, T, Y, S> = Either<A::S<O,T,Y,S>,B::S<O,T,Y,S>>;
+    fn rets_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut Use<O,T,Y,S>> + 'a     where
+    O: 'a,
+    T: 'a,
+    Y: 'a,
+    S: 'a {
+        empty()
+    }
+}
+impl<X: RetVals<O,T,Y,S>,O,T,Y,S> SaneTerminator<O,T,Y,S> for Ret<X>{
+    fn uses<'a>(&'a self) -> impl Iterator<Item = &'a Use<O, T, Y, S>> + 'a
+    where
+        O: 'a,
+        T: 'a,
+        Y: 'a,
+        S: 'a {
+        self.wrapped.rets()
+    }
+
+    fn uses_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut Use<O, T, Y, S>> + 'a
+    where
+        O: 'a,
+        T: 'a,
+        Y: 'a,
+        S: 'a {
+        self.wrapped.rets_mut()
+    }
+
+    fn t2s<'a>(&'a self) -> impl Iterator<Item = &'a BlockTarget<O, T, Y, S>> + 'a
+    where
+        O: 'a,
+        T: 'a,
+        Y: 'a,
+        S: 'a {
+        empty()
+    }
+
+    fn t2s_mut<'a>(&'a mut self) -> impl Iterator<Item = &'a mut BlockTarget<O, T, Y, S>> + 'a
+    where
+        O: 'a,
+        T: 'a,
+        Y: 'a,
+        S: 'a {
+        empty()
+    }
 }

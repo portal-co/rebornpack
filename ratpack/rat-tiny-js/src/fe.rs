@@ -6,10 +6,12 @@ use std::{
 };
 
 use anyhow::Context;
+use either::Either;
 use id_arena::Id;
 use rat_ir::{
-    no_push, Block, BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Func, Use,
-    Value,
+    no_push,
+    util::{If, Push, Ret},
+    Block, BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Func, Use, Value,
 };
 use swc_core::{
     atoms::Atom,
@@ -170,7 +172,12 @@ impl<O, T, Y, S> TinyOp<O, T, Y, S> for BasicTinyOp<O, T, Y, S> {
         Ok(Self::Num(a))
     }
 }
-pub trait TinyTerm<O, T, Y, S>: Default {
+pub trait TinyTerm<O, T, Y, S>:
+    Push<BasicTinyTerm<O, T, Y, S>>
+    + Push<BlockTarget<O, T, Y, S>>
+    + Push<If<O, T, Y, S, BlockTarget<O, T, Y, S>>>
+    + Push<Ret<Use<O, T, Y, S>>>
+{
     fn r#if(
         a: Use<O, T, Y, S>,
         if_true: BlockTarget<O, T, Y, S>,
@@ -179,46 +186,98 @@ pub trait TinyTerm<O, T, Y, S>: Default {
     fn just(a: BlockTarget<O, T, Y, S>) -> anyhow::Result<Self>;
     fn ret(a: Use<O, T, Y, S>) -> anyhow::Result<Self>;
 }
-impl<B: Bound> TinyTerm<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>> for BoundTerm<B>
-where
-    B::T<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>:
-        TinyTerm<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
+impl<
+        O,
+        T,
+        Y,
+        S,
+        X: Push<BasicTinyTerm<O, T, Y, S>>
+            + Push<BlockTarget<O, T, Y, S>>
+            + Push<If<O, T, Y, S, BlockTarget<O, T, Y, S>>>
+            + Push<Ret<Use<O, T, Y, S>>>,
+    > TinyTerm<O, T, Y, S> for X
 {
     fn r#if(
-        a: Use<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
-        if_true: BlockTarget<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
-        if_false: BlockTarget<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
-    ) -> anyhow::Result<BoundTerm<B>> {
-        Ok(Self(B::T::<
-            BoundOp<B>,
-            BoundTerm<B>,
-            BoundType<B>,
-            BoundSelect<B>,
-        >::r#if(a, if_true, if_false)?))
+        a: Use<O, T, Y, S>,
+        if_true: BlockTarget<O, T, Y, S>,
+        if_false: BlockTarget<O, T, Y, S>,
+    ) -> anyhow::Result<Self> {
+        Ok(
+            match Self::push(If {
+                val: a,
+                then: if_true,
+                r#else: Some(if_false),
+            }) {
+                either::Either::Left(l) => l,
+                either::Either::Right(r) => Self::push(BasicTinyTerm::If {
+                    cond: r.val,
+                    if_true: r.then,
+                    if_false: r.r#else.unwrap(),
+                })
+                .map_right(|_| ())
+                .unwrap_left(),
+            },
+        )
     }
 
-    fn just(
-        a: BlockTarget<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
-    ) -> anyhow::Result<BoundTerm<B>> {
-        Ok(Self(B::T::<
-            BoundOp<B>,
-            BoundTerm<B>,
-            BoundType<B>,
-            BoundSelect<B>,
-        >::just(a)?))
+    fn just(a: BlockTarget<O, T, Y, S>) -> anyhow::Result<Self> {
+        Ok(match Self::push(a) {
+            either::Either::Left(l) => l,
+            either::Either::Right(r) => Self::push(BasicTinyTerm::Just(r))
+                .map_right(|_| ())
+                .unwrap_left(),
+        })
     }
 
-    fn ret(
-        a: Use<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
-    ) -> anyhow::Result<BoundTerm<B>> {
-        Ok(Self(B::T::<
-            BoundOp<B>,
-            BoundTerm<B>,
-            BoundType<B>,
-            BoundSelect<B>,
-        >::ret(a)?))
+    fn ret(a: Use<O, T, Y, S>) -> anyhow::Result<Self> {
+        Ok(match Self::push(Ret { wrapped: a }) {
+            Either::Left(l) => l,
+            Either::Right(r) => Self::push(BasicTinyTerm::Ret(r.wrapped))
+                .map_right(|_| ())
+                .unwrap_left(),
+        })
     }
 }
+// impl<B: Bound> TinyTerm<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>> for BoundTerm<B>
+// where
+//     B::T<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>:
+//         TinyTerm<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
+// {
+//     fn r#if(
+//         a: Use<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
+//         if_true: BlockTarget<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
+//         if_false: BlockTarget<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
+//     ) -> anyhow::Result<BoundTerm<B>> {
+//         Ok(Self(B::T::<
+//             BoundOp<B>,
+//             BoundTerm<B>,
+//             BoundType<B>,
+//             BoundSelect<B>,
+//         >::r#if(a, if_true, if_false)?))
+//     }
+
+//     fn just(
+//         a: BlockTarget<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
+//     ) -> anyhow::Result<BoundTerm<B>> {
+//         Ok(Self(B::T::<
+//             BoundOp<B>,
+//             BoundTerm<B>,
+//             BoundType<B>,
+//             BoundSelect<B>,
+//         >::just(a)?))
+//     }
+
+//     fn ret(
+//         a: Use<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
+//     ) -> anyhow::Result<BoundTerm<B>> {
+//         Ok(Self(B::T::<
+//             BoundOp<B>,
+//             BoundTerm<B>,
+//             BoundType<B>,
+//             BoundSelect<B>,
+//         >::ret(a)?))
+//     }
+// }
 pub enum BasicTinyTerm<O, T, Y, S> {
     Panic,
     Just(BlockTarget<O, T, Y, S>),
@@ -252,27 +311,27 @@ impl<O, T, Y: Clone, S: Clone> Clone for BasicTinyTerm<O, T, Y, S> {
         }
     }
 }
-impl<O, T, Y, S> TinyTerm<O, T, Y, S> for BasicTinyTerm<O, T, Y, S> {
-    fn r#if(
-        a: Use<O, T, Y, S>,
-        if_true: BlockTarget<O, T, Y, S>,
-        if_false: BlockTarget<O, T, Y, S>,
-    ) -> anyhow::Result<BasicTinyTerm<O, T, Y, S>> {
-        Ok(Self::If {
-            cond: a,
-            if_true,
-            if_false,
-        })
-    }
+// impl<O, T, Y, S> TinyTerm<O, T, Y, S> for BasicTinyTerm<O, T, Y, S> {
+//     fn r#if(
+//         a: Use<O, T, Y, S>,
+//         if_true: BlockTarget<O, T, Y, S>,
+//         if_false: BlockTarget<O, T, Y, S>,
+//     ) -> anyhow::Result<BasicTinyTerm<O, T, Y, S>> {
+//         Ok(Self::If {
+//             cond: a,
+//             if_true,
+//             if_false,
+//         })
+//     }
 
-    fn just(a: BlockTarget<O, T, Y, S>) -> anyhow::Result<BasicTinyTerm<O, T, Y, S>> {
-        Ok(Self::Just(a))
-    }
+//     fn just(a: BlockTarget<O, T, Y, S>) -> anyhow::Result<BasicTinyTerm<O, T, Y, S>> {
+//         Ok(Self::Just(a))
+//     }
 
-    fn ret(a: Use<O, T, Y, S>) -> anyhow::Result<BasicTinyTerm<O, T, Y, S>> {
-        Ok(Self::Ret(a))
-    }
-}
+//     fn ret(a: Use<O, T, Y, S>) -> anyhow::Result<BasicTinyTerm<O, T, Y, S>> {
+//         Ok(Self::Ret(a))
+//     }
+// }
 pub fn funcs<
     O: TinyOp<O, T, Y, S> + 'static,
     T: TinyTerm<O, T, Y, S> + 'static,
@@ -451,11 +510,13 @@ fn func<
         PhantomData,
     ));
     n.funcs[a].blocks[k].insts.push(v);
-    n.funcs[a].blocks[k].term = (ctx2.ret)(Use {
-        value: v,
-        select: S::default(),
-    })
-    .context("in getting ret")?;
+    n.funcs[a].blocks[k].term = Some(
+        (ctx2.ret)(Use {
+            value: v,
+            select: S::default(),
+        })
+        .context("in getting ret")?,
+    );
     return Ok(());
 }
 pub struct RCtx<O: TinyOp<O, T, Y, S>, T: TinyTerm<O, T, Y, S>, Y: Clone + Default, S: Default, D> {
@@ -572,24 +633,26 @@ impl XAst for Stmt {
                     select: Default::default(),
                 })
                 .context("in gtting ret")?;
-                n.funcs[a].blocks[k].term = cv;
+                n.funcs[a].blocks[k].term = Some(cv);
                 let dummy = n.funcs[a].blocks.alloc(Default::default());
                 Ok(((), dummy))
             }
             Stmt::Labeled(l) => {
                 let then_block = n.funcs[a].blocks.alloc(Default::default());
-                n.funcs[a].blocks[k].term = T::just(BlockTarget {
-                    block: then_block,
-                    args: vars
-                        .iter()
-                        .map(|a| Use {
-                            value: *a,
-                            select: S::default(),
-                        })
-                        .collect(),
-                    prepend: vec![],
-                })
-                .context("in gtting just")?;
+                n.funcs[a].blocks[k].term = Some(
+                    T::just(BlockTarget {
+                        block: then_block,
+                        args: vars
+                            .iter()
+                            .map(|a| Use {
+                                value: *a,
+                                select: S::default(),
+                            })
+                            .collect(),
+                        prepend: vec![],
+                    })
+                    .context("in gtting just")?,
+                );
                 for v in vars.iter_mut() {
                     let av = n.funcs[a].add_blockparam(then_block, Y::default());
                     *v = av;
@@ -610,18 +673,20 @@ impl XAst for Stmt {
                 let (_, k) = l
                     .body
                     .ast_compile(&ctx2, c, a, m, n, then_block, ids, vars)?;
-                n.funcs[a].blocks[k].term = T::just(BlockTarget {
-                    block: done_block,
-                    args: vars
-                        .iter()
-                        .map(|a| Use {
-                            value: *a,
-                            select: S::default(),
-                        })
-                        .collect(),
-                    prepend: vec![],
-                })
-                .context("in gtting just")?;
+                n.funcs[a].blocks[k].term = Some(
+                    T::just(BlockTarget {
+                        block: done_block,
+                        args: vars
+                            .iter()
+                            .map(|a| Use {
+                                value: *a,
+                                select: S::default(),
+                            })
+                            .collect(),
+                        prepend: vec![],
+                    })
+                    .context("in gtting just")?,
+                );
                 for v in vars.iter_mut() {
                     let av = n.funcs[a].add_blockparam(done_block, Y::default());
                     *v = av;
@@ -633,18 +698,20 @@ impl XAst for Stmt {
                     .loops
                     .get(&b.label.as_ref().map(|a| &a.sym).cloned())
                     .context("in getting the label")?;
-                n.funcs[a].blocks[k].term = T::just(BlockTarget {
-                    block: bc.r#break,
-                    args: vars
-                        .iter()
-                        .map(|a| Use {
-                            value: *a,
-                            select: S::default(),
-                        })
-                        .collect(),
-                    prepend: vec![],
-                })
-                .context("in gtting just")?;
+                n.funcs[a].blocks[k].term = Some(
+                    T::just(BlockTarget {
+                        block: bc.r#break,
+                        args: vars
+                            .iter()
+                            .map(|a| Use {
+                                value: *a,
+                                select: S::default(),
+                            })
+                            .collect(),
+                        prepend: vec![],
+                    })
+                    .context("in gtting just")?,
+                );
                 let dummy = n.funcs[a].blocks.alloc(Default::default());
                 Ok(((), dummy))
             }
@@ -653,18 +720,20 @@ impl XAst for Stmt {
                     .loops
                     .get(&b.label.as_ref().map(|a| &a.sym).cloned())
                     .context("in getting the label")?;
-                n.funcs[a].blocks[k].term = T::just(BlockTarget {
-                    block: bc.r#continue,
-                    args: vars
-                        .iter()
-                        .map(|a| Use {
-                            value: *a,
-                            select: S::default(),
-                        })
-                        .collect(),
-                    prepend: vec![],
-                })
-                .context("in gtting just")?;
+                n.funcs[a].blocks[k].term = Some(
+                    T::just(BlockTarget {
+                        block: bc.r#continue,
+                        args: vars
+                            .iter()
+                            .map(|a| Use {
+                                value: *a,
+                                select: S::default(),
+                            })
+                            .collect(),
+                        prepend: vec![],
+                    })
+                    .context("in gtting just")?,
+                );
                 let dummy = n.funcs[a].blocks.alloc(Default::default());
                 Ok(((), dummy))
             }
@@ -672,23 +741,25 @@ impl XAst for Stmt {
                 let (cv, k) = cond.test.ast_compile(ctx, c, a, m, n, k, ids, vars)?;
                 let then_block = n.funcs[a].blocks.alloc(Default::default());
                 let else_block = n.funcs[a].blocks.alloc(Default::default());
-                n.funcs[a].blocks[k].term = T::r#if(
-                    Use {
-                        value: cv,
-                        select: Default::default(),
-                    },
-                    BlockTarget {
-                        block: then_block,
-                        args: vec![],
-                        prepend: vec![],
-                    },
-                    BlockTarget {
-                        block: else_block,
-                        args: vec![],
-                        prepend: vec![],
-                    },
-                )
-                .context("in gtting if")?;
+                n.funcs[a].blocks[k].term = Some(
+                    T::r#if(
+                        Use {
+                            value: cv,
+                            select: Default::default(),
+                        },
+                        BlockTarget {
+                            block: then_block,
+                            args: vec![],
+                            prepend: vec![],
+                        },
+                        BlockTarget {
+                            block: else_block,
+                            args: vec![],
+                            prepend: vec![],
+                        },
+                    )
+                    .context("in gtting if")?,
+                );
                 let mut true_vars = vars.to_owned();
                 let mut false_vars = vars.to_owned();
                 let (x, true_block) =
@@ -702,30 +773,34 @@ impl XAst for Stmt {
                     }
                 };
                 let new = n.funcs[a].blocks.alloc(Default::default());
-                n.funcs[a].blocks[true_block].term = T::just(BlockTarget {
-                    block: new,
-                    args: true_vars
-                        .into_iter()
-                        .map(|a| Use {
-                            value: a,
-                            select: Default::default(),
-                        })
-                        .collect(),
-                    prepend: vec![],
-                })
-                .context("in gtting just")?;
-                n.funcs[a].blocks[false_block].term = T::just(BlockTarget {
-                    block: new,
-                    args: false_vars
-                        .into_iter()
-                        .map(|a| Use {
-                            value: a,
-                            select: Default::default(),
-                        })
-                        .collect(),
-                    prepend: vec![],
-                })
-                .context("in gtting just")?;
+                n.funcs[a].blocks[true_block].term = Some(
+                    T::just(BlockTarget {
+                        block: new,
+                        args: true_vars
+                            .into_iter()
+                            .map(|a| Use {
+                                value: a,
+                                select: Default::default(),
+                            })
+                            .collect(),
+                        prepend: vec![],
+                    })
+                    .context("in gtting just")?,
+                );
+                n.funcs[a].blocks[false_block].term = Some(
+                    T::just(BlockTarget {
+                        block: new,
+                        args: false_vars
+                            .into_iter()
+                            .map(|a| Use {
+                                value: a,
+                                select: Default::default(),
+                            })
+                            .collect(),
+                        prepend: vec![],
+                    })
+                    .context("in gtting just")?,
+                );
                 // let av = n.funcs[a].add_blockparam(new, Y::default());
                 for v in vars.iter_mut() {
                     let av = n.funcs[a].add_blockparam(new, Y::default());
@@ -770,18 +845,20 @@ impl XAst for Stmt {
                         },
                     )
                 };
-                n.funcs[a].blocks[k].term = T::just(BlockTarget {
-                    block: then_block,
-                    args: vars
-                        .iter()
-                        .map(|a| Use {
-                            value: *a,
-                            select: S::default(),
-                        })
-                        .collect(),
-                    prepend: vec![],
-                })
-                .context("in gtting just")?;
+                n.funcs[a].blocks[k].term = Some(
+                    T::just(BlockTarget {
+                        block: then_block,
+                        args: vars
+                            .iter()
+                            .map(|a| Use {
+                                value: *a,
+                                select: S::default(),
+                            })
+                            .collect(),
+                        prepend: vec![],
+                    })
+                    .context("in gtting just")?,
+                );
                 for v in vars.iter_mut() {
                     let av = n.funcs[a].add_blockparam(then_block, Y::default());
                     *v = av;
@@ -803,7 +880,7 @@ impl XAst for Stmt {
                     cond.body
                         .ast_compile(&ctx2, c, a, m, n, then_block, ids, &mut true_vars)?;
                 // let new = n.funcs[a].blocks.alloc(Default::default());
-                n.funcs[a].blocks[true_block].term = t(vars).context("in gtting ret")?;
+                n.funcs[a].blocks[true_block].term = Some(t(vars).context("in gtting ret")?);
                 // n.funcs[a].blocks[false_block].term = T::just(BlockTarget {
                 //     block: new,
                 //     args: false_vars
@@ -856,7 +933,7 @@ impl XAst for Stmt {
                         },
                     )
                 };
-                n.funcs[a].blocks[k].term = t(vars).context("in gtting ret")?;
+                n.funcs[a].blocks[k].term = Some(t(vars).context("in gtting ret")?);
                 for v in vars.iter_mut() {
                     let av = n.funcs[a].add_blockparam(then_block, Y::default());
                     *v = av;
@@ -878,7 +955,7 @@ impl XAst for Stmt {
                     cond.body
                         .ast_compile(&ctx2, c, a, m, n, then_block, ids, &mut true_vars)?;
                 // let new = n.funcs[a].blocks.alloc(Default::default());
-                n.funcs[a].blocks[true_block].term = t(vars).context("in gtting ret")?;
+                n.funcs[a].blocks[true_block].term = Some(t(vars).context("in gtting ret")?);
                 // n.funcs[a].blocks[false_block].term = T::just(BlockTarget {
                 //     block: new,
                 //     args: false_vars
@@ -1006,23 +1083,25 @@ impl XAst for Expr {
                 let (cv, k) = cond.test.ast_compile(ctx, c, a, m, n, k, ids, vars)?;
                 let then_block = n.funcs[a].blocks.alloc(Default::default());
                 let else_block = n.funcs[a].blocks.alloc(Default::default());
-                n.funcs[a].blocks[k].term = T::r#if(
-                    Use {
-                        value: cv,
-                        select: Default::default(),
-                    },
-                    BlockTarget {
-                        block: then_block,
-                        args: vec![],
-                        prepend: vec![],
-                    },
-                    BlockTarget {
-                        block: else_block,
-                        args: vec![],
-                        prepend: vec![],
-                    },
-                )
-                .context("in gtting if")?;
+                n.funcs[a].blocks[k].term = Some(
+                    T::r#if(
+                        Use {
+                            value: cv,
+                            select: Default::default(),
+                        },
+                        BlockTarget {
+                            block: then_block,
+                            args: vec![],
+                            prepend: vec![],
+                        },
+                        BlockTarget {
+                            block: else_block,
+                            args: vec![],
+                            prepend: vec![],
+                        },
+                    )
+                    .context("in gtting if")?,
+                );
                 let mut true_vars = vars.to_owned();
                 let mut false_vars = vars.to_owned();
                 let (x, true_block) =
@@ -1032,32 +1111,36 @@ impl XAst for Expr {
                     cond.alt
                         .ast_compile(ctx, c, a, m, n, else_block, ids, &mut false_vars)?;
                 let new = n.funcs[a].blocks.alloc(Default::default());
-                n.funcs[a].blocks[true_block].term = T::just(BlockTarget {
-                    block: new,
-                    args: vec![x]
-                        .into_iter()
-                        .chain(true_vars.into_iter())
-                        .map(|a| Use {
-                            value: a,
-                            select: Default::default(),
-                        })
-                        .collect(),
-                    prepend: vec![],
-                })
-                .context("in gtting just")?;
-                n.funcs[a].blocks[false_block].term = T::just(BlockTarget {
-                    block: new,
-                    args: vec![y]
-                        .into_iter()
-                        .chain(false_vars.into_iter())
-                        .map(|a| Use {
-                            value: a,
-                            select: Default::default(),
-                        })
-                        .collect(),
-                    prepend: vec![],
-                })
-                .context("in gtting just")?;
+                n.funcs[a].blocks[true_block].term = Some(
+                    T::just(BlockTarget {
+                        block: new,
+                        args: vec![x]
+                            .into_iter()
+                            .chain(true_vars.into_iter())
+                            .map(|a| Use {
+                                value: a,
+                                select: Default::default(),
+                            })
+                            .collect(),
+                        prepend: vec![],
+                    })
+                    .context("in gtting just")?,
+                );
+                n.funcs[a].blocks[false_block].term = Some(
+                    T::just(BlockTarget {
+                        block: new,
+                        args: vec![y]
+                            .into_iter()
+                            .chain(false_vars.into_iter())
+                            .map(|a| Use {
+                                value: a,
+                                select: Default::default(),
+                            })
+                            .collect(),
+                        prepend: vec![],
+                    })
+                    .context("in gtting just")?,
+                );
                 let av = n.funcs[a].add_blockparam(new, Y::default());
                 for v in vars.iter_mut() {
                     let av = n.funcs[a].add_blockparam(new, Y::default());
@@ -1152,11 +1235,13 @@ impl XAst for Expr {
                             PhantomData,
                         ));
                         n.funcs[a].blocks[k].insts.push(v);
-                        n.funcs[a].blocks[k].term = (ctx2.ret)(Use {
-                            value: v,
-                            select: S::default(),
-                        })
-                        .context("in gtting ret")?;
+                        n.funcs[a].blocks[k].term = Some(
+                            (ctx2.ret)(Use {
+                                value: v,
+                                select: S::default(),
+                            })
+                            .context("in gtting ret")?,
+                        );
                         let v = n.funcs[a].add_blockparam(k, Y::default());
                         Ok((v, new))
                     }

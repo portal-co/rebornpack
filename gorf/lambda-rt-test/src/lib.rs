@@ -4,7 +4,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn id(){
+    fn id() {
         let id = lambda_rt::lamc!("\\x.x");
     }
 }

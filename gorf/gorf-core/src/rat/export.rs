@@ -4,15 +4,19 @@ use id_arena::Id;
 use rat_ir::{module::Module, no_push, Block, Func, Use, Value};
 
 use crate::{Binder, GTerm};
-pub enum Call<O, T, Y,S> {
-    Func(Id<Func<O, T, Y,S>>),
+pub enum Call<O, T, Y, S> {
+    Func(Id<Func<O, T, Y, S>>),
     Var,
 }
-no_push!(type Call<O,T,Y,S>;);
+no_push!(
+    type Call<O, T, Y, S>;
+);
 pub struct Ret<O, T, Y, S> {
     pub val: Id<Value<O, T, Y, S>>,
 }
-no_push!(type Ret<O,T,Y,S>;);
+no_push!(
+    type Ret<O, T, Y, S>;
+);
 pub fn export<
     V: Binder<Var = V> + Eq + Ord + Clone,
     M: Clone,

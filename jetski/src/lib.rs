@@ -6,9 +6,9 @@ pub mod bopt;
 pub mod detect;
 pub mod ssa;
 pub type I = num_bigint::BigUint;
-pub fn clean(m: &mut BTreeMap<Id<Var>,I>){
-    for (k,v) in m.clone().into_iter(){
-        if v == 0u32.into(){
+pub fn clean(m: &mut BTreeMap<Id<Var>, I>) {
+    for (k, v) in m.clone().into_iter() {
+        if v == 0u32.into() {
             m.remove(&k);
         }
     }
@@ -26,19 +26,19 @@ pub struct Scope {
 pub enum Block {
     Br(BTreeMap<Id<Var>, I>, Id<Block>),
     BrDec(Id<Var>, Id<Block>, Id<Block>),
-    HyCall(String,Vec<Id<Var>>,Id<Block>),
+    HyCall(String, Vec<Id<Var>>, Id<Block>),
     Todo,
 }
 impl Block {
-    pub fn modify_targets(&mut self, mut a: impl FnMut(&mut Id<Block>)){
-        match self{
+    pub fn modify_targets(&mut self, mut a: impl FnMut(&mut Id<Block>)) {
+        match self {
             Block::Br(_, n) => a(n),
             Block::BrDec(_, nt, nf) => {
                 a(nt);
                 a(nf);
-            },
+            }
             Block::HyCall(_, _, b) => a(b),
-            Block::Todo => {},
+            Block::Todo => {}
         }
     }
     pub fn cff(&self, idx: Id<Var>) -> PMMNCmds {
@@ -51,7 +51,7 @@ impl Block {
             Block::BrDec(a, t, e) => {
                 let mut ba = BTreeMap::new();
                 let mut bb = BTreeMap::new();
-                ba.insert(idx, I::from(t.index())+ I::from(1usize));
+                ba.insert(idx, I::from(t.index()) + I::from(1usize));
                 bb.insert(idx, I::from(e.index()) + I::from(1usize));
                 return PMMNCmds(vec![PMMNCmd::If(
                     PMMNTest::Dec(*a),
@@ -63,22 +63,36 @@ impl Block {
             Block::HyCall(a, v, i) => {
                 let mut b = BTreeMap::new();
                 b.insert(idx, I::from(i.index()) + I::from(1usize));
-                return PMMNCmds(vec![PMMNCmd::HyCall(a.clone(), v.clone()),PMMNCmd::Inc(b)]);
-            },
+                return PMMNCmds(vec![PMMNCmd::HyCall(a.clone(), v.clone()), PMMNCmd::Inc(b)]);
+            }
         }
     }
 }
 impl Scope {
-    pub fn add_cmul(&mut self, from: Id<Var>, to: Id<Var>, k: I) -> PMMNCmds{
-        let tmp = self.vars.alloc(Var { initial: I::from(0usize) });
+    pub fn add_cmul(&mut self, from: Id<Var>, to: Id<Var>, k: I) -> PMMNCmds {
+        let tmp = self.vars.alloc(Var {
+            initial: I::from(0usize),
+        });
         let mut x = vec![];
-        let a = vec![PMMNCmd::Inc(vec![(tmp,I::from(1usize)),(to,k)].into_iter().collect())];
-        x.push(PMMNCmd::While(PMMNTest::Dec(from), format!("tmp_add_cmul"), PMMNCmds(a)));
-        let a = vec![PMMNCmd::Inc(vec![(from,I::from(1usize))].into_iter().collect())];
-        x.push(PMMNCmd::While(PMMNTest::Dec(tmp), format!("tmp_add_cmul"), PMMNCmds(a)));
+        let a = vec![PMMNCmd::Inc(
+            vec![(tmp, I::from(1usize)), (to, k)].into_iter().collect(),
+        )];
+        x.push(PMMNCmd::While(
+            PMMNTest::Dec(from),
+            format!("tmp_add_cmul"),
+            PMMNCmds(a),
+        ));
+        let a = vec![PMMNCmd::Inc(
+            vec![(from, I::from(1usize))].into_iter().collect(),
+        )];
+        x.push(PMMNCmd::While(
+            PMMNTest::Dec(tmp),
+            format!("tmp_add_cmul"),
+            PMMNCmds(a),
+        ));
         return PMMNCmds(x);
     }
-    pub fn traverse(&self, b: &mut BTreeMap<Id<Var>, I>, k: &mut Id<Block>) -> bool{
+    pub fn traverse(&self, b: &mut BTreeMap<Id<Var>, I>, k: &mut Id<Block>) -> bool {
         let mut did = false;
         while let Block::Br(a, c) = &self.blocks[*k] {
             for (d, e) in a.iter() {
@@ -89,31 +103,41 @@ impl Scope {
         }
         return did;
     }
-    pub fn traversal_pass(&mut self) -> bool{
+    pub fn traversal_pass(&mut self) -> bool {
         let mut did = false;
-        for (i,mut b) in self.blocks.iter().map(|(a,b)|(a,b.clone())).collect::<Vec<_>>(){
-            if let Block::Br(b, k) = &mut b{
+        for (i, mut b) in self
+            .blocks
+            .iter()
+            .map(|(a, b)| (a, b.clone()))
+            .collect::<Vec<_>>()
+        {
+            if let Block::Br(b, k) = &mut b {
                 did = did || self.traverse(b, k);
             }
             self.blocks[i] = b;
         }
         return did;
     }
-    pub fn is_alias(&self, b: Id<Block>) -> Option<Id<Block>>{
+    pub fn is_alias(&self, b: Id<Block>) -> Option<Id<Block>> {
         let b2 = self.blocks[b].clone();
-        if let Block::Br(i, t) = b2.clone(){
-            if i == BTreeMap::new(){
+        if let Block::Br(i, t) = b2.clone() {
+            if i == BTreeMap::new() {
                 return Some(t);
             }
         }
         return None;
     }
-    pub fn alias_opt(&mut self) -> bool{
+    pub fn alias_opt(&mut self) -> bool {
         let mut did = false;
-        for (i,mut b) in self.blocks.iter().map(|(a,b)|(a,b.clone())).collect::<Vec<_>>(){
+        for (i, mut b) in self
+            .blocks
+            .iter()
+            .map(|(a, b)| (a, b.clone()))
+            .collect::<Vec<_>>()
+        {
             // let mut b = b.clone();
-            b.modify_targets(|i|{
-                while let Some(j) = self.is_alias(*i){
+            b.modify_targets(|i| {
+                while let Some(j) = self.is_alias(*i) {
                     *i = j;
                     did = true;
                 }
@@ -137,34 +161,30 @@ impl Scope {
         }
         return *relooper::reloop(m.into_iter().collect(), e);
     }
-    pub fn emit_relooped(&mut self, e: Id<Block>, collect: &mut PMMNCmds){
+    pub fn emit_relooped(&mut self, e: Id<Block>, collect: &mut PMMNCmds) {
         let r = self.reloop(e);
-        let v = self.vars.alloc(Var { initial: I::from(0u8) });
+        let v = self.vars.alloc(Var {
+            initial: I::from(0u8),
+        });
         self.emit_reloop(&r, v, collect);
     }
     pub fn emit_br(&self, l: BranchMode, idx: Id<Var>, collect: &mut PMMNCmds, b: Id<Block>) {
         match l {
-            BranchMode::LoopBreak(l) => {
-                collect.0.push(PMMNCmd::Break(format!("loop{l}")))
-            },
+            BranchMode::LoopBreak(l) => collect.0.push(PMMNCmd::Break(format!("loop{l}"))),
             BranchMode::LoopBreakIntoMulti(l) => {
                 let mut m = BTreeMap::new();
                 m.insert(idx, b.index().into());
                 collect.0.push(PMMNCmd::Inc(m));
                 collect.0.push(PMMNCmd::Break(format!("loop{l}")))
-            },
-            BranchMode::LoopContinue(l) => {
-                collect.0.push(PMMNCmd::Continue(format!("loop{l}")))
-            },
+            }
+            BranchMode::LoopContinue(l) => collect.0.push(PMMNCmd::Continue(format!("loop{l}"))),
             BranchMode::LoopContinueIntoMulti(l) => {
                 let mut m = BTreeMap::new();
                 m.insert(idx, b.index().into());
                 collect.0.push(PMMNCmd::Inc(m));
                 collect.0.push(PMMNCmd::Continue(format!("loop{l}")))
-            },
-            BranchMode::MergedBranch => {
-
-            },
+            }
+            BranchMode::MergedBranch => {}
             BranchMode::MergedBranchIntoMulti => {
                 let mut m = BTreeMap::new();
                 m.insert(idx, b.index().into());
@@ -239,10 +259,10 @@ impl Scope {
                     collect.0.push(PMMNCmd::If(PMMNTest::Dec(a), ax, bx))
                 }
                 Block::Todo => todo!(),
-                Block::HyCall(a,v,b) => {
-                    collect.0.push(PMMNCmd::HyCall(a,v));
+                Block::HyCall(a, v, b) => {
+                    collect.0.push(PMMNCmd::HyCall(a, v));
                     self.emit_target(s, idx, b, collect);
-                },
+                }
             },
             ShapedBlock::Loop(l) => {
                 let mut n = PMMNCmds(vec![]);
@@ -285,12 +305,12 @@ impl Scope {
         return PMMNCmds(vec![PMMNCmd::While(PMMNTest::Dec(idx), "$".to_owned(), v)]);
     }
 }
-#[derive(Clone,PartialEq, PartialOrd, Ord,Eq)]
+#[derive(Clone, PartialEq, PartialOrd, Ord, Eq)]
 pub enum PMMNTest {
     Dec(Id<Var>),
     True,
 }
-#[derive(Clone,PartialEq, PartialOrd, Ord,Eq)]
+#[derive(Clone, PartialEq, PartialOrd, Ord, Eq)]
 pub enum PMMNCmd {
     Test(PMMNTest),
     Inc(BTreeMap<Id<Var>, I>),
@@ -298,7 +318,7 @@ pub enum PMMNCmd {
     While(PMMNTest, String, PMMNCmds),
     Break(String),
     Continue(String),
-    HyCall(String,Vec<Id<Var>>)
+    HyCall(String, Vec<Id<Var>>),
 }
 #[derive(Clone)]
 pub struct LoopData {
@@ -365,7 +385,7 @@ impl PMMNCmd {
         n
     }
 }
-#[derive(Clone,PartialEq, PartialOrd, Ord,Eq)]
+#[derive(Clone, PartialEq, PartialOrd, Ord, Eq)]
 pub struct PMMNCmds(pub Vec<PMMNCmd>);
 impl PMMNCmds {
     pub fn render(

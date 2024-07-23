@@ -1,7 +1,7 @@
 use std::{
     collections::BTreeMap,
     iter::empty,
-    sync::{atomic::AtomicBool, Mutex, OnceLock},
+    sync::{atomic::AtomicBool, Arc, Mutex, OnceLock},
 };
 
 use anyhow::Context;
@@ -9,6 +9,7 @@ use bytes::Bytes;
 use either::Either;
 use id_arena::Id;
 use once_cell::sync::Lazy;
+
 // use more_waffle::{
 //     add_op, bundle_fn,
 //     copying::func::{DontObf, Obfuscate},
@@ -16,8 +17,8 @@ use once_cell::sync::Lazy;
 // };
 use rat_ir::{
     bi::ai::InferOp,
-    util::{BinOp, ExtractIn, If, PerID},
-    Block, BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Call, Func,
+    util::{BinOp, ExtractIn, If, PerID, Ret},
+    Block, BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Call, Func, Use,
 };
 use serde::{Deserialize, Serialize};
 use trie_rs::map::Trie;
@@ -517,6 +518,66 @@ impl<C> Wf<C> for waffle::Func {
     }
 }
 impl<O, T, Y, S: WaffleExtra<Option<usize>>, C> ExportTerm<O, T, Y, S, C>
+    for Ret<Vec<Use<O, T, Y, S>>>
+{
+    fn export_term(
+        &self,
+        ctx: &mut C,
+        m: &mut Module,
+        target: &mut FunctionBody,
+        k: waffle::Block,
+        valmap: &PerID<rat_ir::Value<O, T, Y, S>, Vec<waffle::Value>>,
+        block_map: &PerID<Block<O, T, Y, S>, waffle::Block>,
+    ) -> anyhow::Result<()> {
+        let args = self
+            .wrapped
+            .iter()
+            .flat_map(|x| {
+                let mut y = valmap[x.value].clone();
+                if let Some(w) = x.select.waffle(&mut *m) {
+                    y = vec![y[w]]
+                }
+                y
+            })
+            .collect();
+        target.set_terminator(k, waffle::Terminator::Return { values: args });
+        Ok(())
+    }
+}
+impl<O, T, Y, S: WaffleExtra<Option<usize>>, C> ExportTerm<O, T, Y, S, C> for Ret<Use<O, T, Y, S>> {
+    fn export_term(
+        &self,
+        ctx: &mut C,
+        m: &mut Module,
+        target: &mut FunctionBody,
+        k: waffle::Block,
+        valmap: &PerID<rat_ir::Value<O, T, Y, S>, Vec<waffle::Value>>,
+        block_map: &PerID<Block<O, T, Y, S>, waffle::Block>,
+    ) -> anyhow::Result<()> {
+        let mut y = valmap[self.wrapped.value].clone();
+        if let Some(w) = self.wrapped.select.waffle(&mut *m) {
+            y = vec![y[w]]
+        };
+
+        target.set_terminator(k, waffle::Terminator::Return { values: y });
+        Ok(())
+    }
+}
+impl<O, T, Y, S: WaffleExtra<Option<usize>>, C> ExportTerm<O, T, Y, S, C> for Ret<()> {
+    fn export_term(
+        &self,
+        ctx: &mut C,
+        m: &mut Module,
+        target: &mut FunctionBody,
+        k: waffle::Block,
+        valmap: &PerID<rat_ir::Value<O, T, Y, S>, Vec<waffle::Value>>,
+        block_map: &PerID<Block<O, T, Y, S>, waffle::Block>,
+    ) -> anyhow::Result<()> {
+        target.set_terminator(k, waffle::Terminator::Return { values: vec![] });
+        Ok(())
+    }
+}
+impl<O, T, Y, S: WaffleExtra<Option<usize>>, C> ExportTerm<O, T, Y, S, C>
     for BlockTarget<O, T, Y, S>
 {
     fn export_term(
@@ -868,8 +929,8 @@ pub fn export_block<
             }
         };
     }
-    src.blocks[k]
-        .term
-        .export_term(&mut *ctx, m, target, wb, &m2, &*w)?;
+    if let Some(t) = src.blocks[k].term.as_ref() {
+        t.export_term(&mut *ctx, m, target, wb, &m2, &*w)?;
+    }
     return Ok(());
 }

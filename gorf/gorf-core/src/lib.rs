@@ -410,11 +410,11 @@ pub fn str_parser() -> impl Parser<char, GTerm<String, Infallible>, Error = Simp
 pub struct Scope<T: Binder>(pub BTreeMap<T::Var, T>);
 
 impl<V: Binder, M> GTerm<V, M> {
-    pub fn to_args<'a>(&'a self, args: &mut Vec<&'a GTerm<V,M>>) -> &'a GTerm<V,M>{
-        let GTerm::App(k) = self else{
+    pub fn to_args<'a>(&'a self, args: &mut Vec<&'a GTerm<V, M>>) -> &'a GTerm<V, M> {
+        let GTerm::App(k) = self else {
             return self;
         };
-        let (a,b) = k.as_ref();
+        let (a, b) = k.as_ref();
         let a = a.to_args(args);
         args.push(b);
         return a;

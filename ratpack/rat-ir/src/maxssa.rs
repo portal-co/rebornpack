@@ -68,7 +68,7 @@ impl<O: Clone, T: SaneTerminator<O, T, Y, S> + Clone, Y: Clone, S: Default + Clo
                 }
             }
         }
-        for u in body.blocks[block].term.uses() {
+        for u in body.blocks[block].term.iter().flat_map(|x|x.uses()) {
             uses.insert(u.clone());
         }
 
@@ -90,8 +90,8 @@ impl<O: Clone, T: SaneTerminator<O, T, Y, S> + Clone, Y: Clone, S: Default + Clo
         //     eprintln!("in block value: {}@{}",value.value.index(),block.index());
         //     return;
         // }
-        for i in body.blocks[block].insts.iter(){
-            if *i == value.value{
+        for i in body.blocks[block].insts.iter() {
+            if *i == value.value {
                 return;
             }
         }
@@ -114,7 +114,8 @@ impl<O: Clone, T: SaneTerminator<O, T, Y, S> + Clone, Y: Clone, S: Default + Clo
 
     fn update_branch_args(&mut self, body: &mut Func<O, T, Y, S>) {
         for (block, blockdata) in body.blocks.iter_mut() {
-            for target in blockdata.term.t2s_mut() {
+            if let Some(term) = blockdata.term.as_mut(){
+            for target in term.t2s_mut() {
                 for new_arg in &self.new_args[target.block] {
                     let actual_value = self
                         .value_map
@@ -127,6 +128,7 @@ impl<O: Clone, T: SaneTerminator<O, T, Y, S> + Clone, Y: Clone, S: Default + Clo
                     });
                 }
             }
+        }
         }
     }
 
@@ -161,7 +163,7 @@ impl<O: Clone, T: SaneTerminator<O, T, Y, S> + Clone, Y: Clone, S: Default + Clo
             body.opts[inst] = def;
         }
         let mut term = body.blocks[block].term.clone();
-        for a in term.uses_mut() {
+        for a in term.iter_mut().flat_map(|x|x.uses_mut()) {
             *a = resolve(body, a.clone());
         }
         body.blocks[block].term = term;

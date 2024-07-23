@@ -186,65 +186,76 @@ impl<C: HasWarsRoot> RustOp<C> for Host<OpWrapper> {
     }
 }
 
-impl<C: HasWarsRoot,O: RustOp<C>,T,Y: Rust<C>,S: RustSel<C>> ExportTerm<TokenStream,C,O,T,Y,S> for WaffleTerm<O,T,Y,S,Infallible>{
+impl<C: HasWarsRoot, O: RustOp<C>, T, Y: Rust<C>, S: RustSel<C>>
+    ExportTerm<TokenStream, C, O, T, Y, S> for WaffleTerm<O, T, Y, S, Infallible>
+{
     fn go(
         &self,
         ctx: &mut C,
-        mut s: impl FnMut(&mut C,id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> TokenStream,
+        mut s: impl FnMut(&mut C, id_arena::Id<rat_ir::Block<O, T, Y, S>>) -> TokenStream,
         f: &rat_ir::Func<O, T, Y, S>,
         mut body: TokenStream,
     ) -> anyhow::Result<TokenStream> {
         use rat_ast::export::EmitTarget;
         let root = ctx.wars_root();
-        match self{
-            WaffleTerm::Br(t) => s.target(ctx,f,t,vec![]),
-            WaffleTerm::CondBr { cond, if_true, if_false } => {
-                let cond = cond.value.ssa::<C,O,T,S,Y,TokenStream>();
+        match self {
+            WaffleTerm::Br(t) => s.target(ctx, f, t, vec![]),
+            WaffleTerm::CondBr {
+                cond,
+                if_true,
+                if_false,
+            } => {
+                let cond = cond.value.ssa::<C, O, T, S, Y, TokenStream>();
                 let cond = format_ident!("{cond}");
                 let if_true = s.target(ctx, f, if_true, vec![]);
                 let if_false = s.target(ctx, f, if_false, vec![]);
-                quote!{
+                quote! {
                     if #cond != 0{
                         #if_true
                     }else{
                         #if_false
                     }
                 }
-            },
-            WaffleTerm::Select { value, cases, default } => {
-                let cond = value.value.ssa::<C,O,T,S,Y,TokenStream>();
+            }
+            WaffleTerm::Select {
+                value,
+                cases,
+                default,
+            } => {
+                let cond = value.value.ssa::<C, O, T, S, Y, TokenStream>();
                 let cond = format_ident!("{cond}");
                 let default = s.target(ctx, f, default, vec![]);
-                let cases = cases.iter().enumerate().map(|(i,a)|{
+                let cases = cases.iter().enumerate().map(|(i, a)| {
                     let a = s.target(ctx, f, a, vec![]);
-                    quote!{
+                    quote! {
                         #i => #a
                     }
                 });
-                quote!{
+                quote! {
                     match #cond{
                         #(#cases),*
                         _ => #default
                     }
                 }
-            },
+            }
             WaffleTerm::Ret(vs) => {
-                let vs = vs.iter().map(|v|{
-                    let v = v.value.ssa::<C,O,T,S,Y,TokenStream>();
+                let vs = vs.iter().map(|v| {
+                    let v = v.value.ssa::<C, O, T, S, Y, TokenStream>();
                     let v = format_ident!("{v}");
-                    quote!{
+                    quote! {
                         #root::wars_rt::func::cast::<_,_,C>(#v)
                     }
                 });
-                quote!{
+                quote! {
                     return (#(#vs),*)
                 }
-            },
+            }
             WaffleTerm::ReturnCall { func, args } => todo!(),
             WaffleTerm::ReturnCallIndirect { table, args } => todo!(),
             WaffleTerm::ReturnCallRef { args } => todo!(),
             WaffleTerm::Unreachable => todo!(),
-        }.to_tokens(&mut body);
+        }
+        .to_tokens(&mut body);
         Ok(body)
     }
 }

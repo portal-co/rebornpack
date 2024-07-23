@@ -1,6 +1,8 @@
 use either::Either;
 use id_arena::Id;
-use rat_ir::{Block, Bound, BoundOp, BoundTerm, BoundType, Builder, Func, Then, Unit, Value};
+use rat_ir::{
+    Block, Bound, BoundOp, BoundTerm, BoundType, BuildFn, Builder, Func, Then, Unit, Value,
+};
 
 pub trait VarBuilder<O, T, Y, S, V> {
     type Result;
@@ -10,11 +12,56 @@ pub trait VarBuilder<O, T, Y, S, V> {
         root: Id<Block<O, T, Y, S>>,
         vars: &mut [V],
     ) -> anyhow::Result<(Self::Result, Id<Block<O, T, Y, S>>)>;
-    fn then<B>(self: Box<Self>, b: B) -> Then<Self, B> where Self: Sized{
+    fn then<B>(self: Box<Self>, b: B) -> Then<Self, B>
+    where
+        Self: Sized,
+    {
         return Then {
             first: self,
             then: b,
         };
+    }
+}
+pub fn build_fn<
+    O,
+    T,
+    Y,
+    S,
+    V,
+    F: FnOnce(
+        &mut Func<O, T, Y, S>,
+        Id<Block<O, T, Y, S>>,
+        &mut [V],
+    ) -> anyhow::Result<(R, Id<Block<O, T, Y, S>>)>,
+    R,
+>(
+    a: F,
+) -> BuildFn<F> {
+    return BuildFn { fun: a };
+}
+impl<
+        O,
+        T,
+        Y,
+        S,
+        V,
+        F: FnOnce(
+            &mut Func<O, T, Y, S>,
+            Id<Block<O, T, Y, S>>,
+            &mut [V],
+        ) -> anyhow::Result<(R, Id<Block<O, T, Y, S>>)>,
+        R,
+    > VarBuilder<O, T, Y, S, V> for BuildFn<F>
+{
+    type Result = R;
+
+    fn build_with_vars(
+        self: Box<Self>,
+        func: &mut Func<O, T, Y, S>,
+        root: Id<Block<O, T, Y, S>>,
+        vars: &mut [V],
+    ) -> anyhow::Result<(Self::Result, Id<Block<O, T, Y, S>>)> {
+        (self.fun)(func, root, vars)
     }
 }
 #[derive(Clone)]
@@ -69,7 +116,7 @@ impl<O, T, Y, S, V: Clone> VarBuilder<O, T, Y, S, V> for Get<usize> {
 #[derive(Clone)]
 pub struct Set<A: ?Sized, T> {
     pub v: T,
-    pub wrapped: Box<A>, 
+    pub wrapped: Box<A>,
 }
 
 impl<O, T, S, Y, V: Clone, A: VarBuilder<O, T, S, Y, V, Result = (V, X)> + ?Sized, X>
@@ -93,7 +140,7 @@ pub struct SetDirect<A: ?Sized, T> {
     pub v: T,
     pub wrapped: Box<A>,
 }
-impl<O, T, S, Y, V: Clone, A: VarBuilder<O, T, S, Y, V, Result = V> + ?Sized> 
+impl<O, T, S, Y, V: Clone, A: VarBuilder<O, T, S, Y, V, Result = V> + ?Sized>
     VarBuilder<O, T, S, Y, V> for SetDirect<A, usize>
 {
     type Result = V;

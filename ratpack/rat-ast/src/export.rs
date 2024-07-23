@@ -347,7 +347,10 @@ pub fn render_bb<O, C, T: ExportTerm<A, C, O, T, Y, S>, Y, S, A: ExportAst<C, O,
             }
         }
     }
-    let r = once(f.blocks[k].term.go(ctx, go, f, a)?);
+    let r = once(match &f.blocks[k].term {
+        Some(b) => b.go(ctx, go, f, a)?,
+        None => a,
+    });
     a2.append(ctx, r);
     return Ok(());
 }
@@ -400,7 +403,8 @@ pub fn render_relooped_func<
                 (
                     a.0,
                     a.1.term
-                        .targets()
+                        .iter()
+                        .flat_map(|c| c.targets())
                         .into_iter()
                         .chain(f.blocks.iter().filter_map(|b| {
                             if rat_ir::dom::dominates(&cfg, Some(b.0), Some(a.0)) {
@@ -497,7 +501,7 @@ pub fn vars<'a, C, O, T: ExportTerm<A, C, O, T, Y, S>, Y, S, A: ExportAst<C, O, 
         .opts
         .iter()
         .map(|a| (a.0.ssa::<C, O, T, S, Y, A>(), a.1.ty(), None))
-        .chain(f.blocks.iter().flat_map(move|(k, v)| {
+        .chain(f.blocks.iter().flat_map(move |(k, v)| {
             v.params.iter().enumerate().map(move |(i, y)| {
                 (
                     A::Var::from(format!("bp{i}at{}", k.index())),

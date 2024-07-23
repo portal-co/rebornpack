@@ -6,13 +6,15 @@ use id_arena::Id;
 use lexpr::cons::ListIter;
 use rat_ast::import::{Get, Set, SetDirect, VarBuilder};
 use rat_ir::{
-    util::{Bt, Push},
+    util::{BinOp, Bt, Push},
     Block, BlockTarget, Bound, BoundOp, BoundSelect, BoundTerm, BoundType, Unit, Use, Value,
 };
+pub mod util;
 
 pub trait LispOp<O, T, Y, S>: Clone {
     fn lisp(x: &lexpr::Value) -> anyhow::Result<Self>;
 }
+
 impl<B: Bound> LispOp<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>> for BoundOp<B>
 where
     B::O<BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>:
@@ -67,21 +69,28 @@ impl<O, T, Y, S> Clone for Loop<O, T, Y, S> {
     }
 }
 pub trait LispSeed<'a, O, T, Y, S, U> {
+    fn bind<'b>(
+        &self,
+        go: &'b mut impl TermTargetFn<'a, O, T, Y, S>,
+    ) -> anyhow::Result<Box<dyn VarBuilder<O, T, Y, S, Id<Value<O, T, Y, S>>, Result = U> + 'a>>;
+}
+impl<'a,O: LispOp<O,T,Y,S> + 'static,T: LispTerm<O,T,Y,S> + 'static,Y: LispOp<O,T,Y,S> + 'static,S: Default + 'static> LispSeed<'a,O,T,Y,S,BlockTarget<O,T,Y,S>> for ListIter<'a>{
     fn bind(
         &self,
-        go: impl TermTargetFn<'a, O, T, Y, S>,
-    ) -> anyhow::Result<impl VarBuilder<O, T, Y, S, Id<Value<O, T, Y, S>>, Result = U> + 'a>;
+        mut go: &mut impl TermTargetFn<'a, O, T, Y, S>,
+    ) -> anyhow::Result<Box<dyn VarBuilder<O, T, Y, S, Id<Value<O, T, Y, S>>, Result = U> + 'a>> {
+        let g = go(self.clone())?;
+        Ok(Box::new(g))
+    }
 }
 impl<'a, O, T, Y, S, U, V, A: LispSeed<'a, O, T, Y, S, U>, B: LispSeed<'a, O, T, Y, S, V>>
     LispSeed<'a, O, T, Y, S, Either<U, V>> for Either<A, B>
 {
     fn bind(
         &self,
-        go: impl TermTargetFn<'a, O, T, Y, S>,
-    ) -> anyhow::Result<
-        impl VarBuilder<O, T, Y, S, Id<Value<O, T, Y, S>>, Result = Either<U, V>> + 'a,
-    > {
-        match self {
+        go: &mut impl TermTargetFn<'a, O, T, Y, S>,
+    ) -> Result<Box<(dyn VarBuilder<O, T, Y, S, Id<rat_ir::Value<O, T, Y, S>>, Result = Either<U, V>> + 'a)>, anyhow::Error> {
+        Box::new(match self {
             Either::Left(a) => a
                 .bind(go)
                 .map(|a| Box::new(a).then(|x| Unit(Either::Left(x))))
@@ -90,7 +99,7 @@ impl<'a, O, T, Y, S, U, V, A: LispSeed<'a, O, T, Y, S, U>, B: LispSeed<'a, O, T,
                 .bind(go)
                 .map(|a| Box::new(a).then(|x| Unit(Either::Right(x))))
                 .map(Either::Right),
-        }
+        })
     }
 }
 pub struct _Bind<X>(pub X);
@@ -110,7 +119,7 @@ impl<
 {
     fn bind(
         &self,
-        go: impl TermTargetFn<'a, BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
+        go: &mut impl TermTargetFn<'a, BoundOp<B>, BoundTerm<B>, BoundType<B>, BoundSelect<B>>,
     ) -> anyhow::Result<
         impl VarBuilder<
                 BoundOp<B>,
@@ -165,7 +174,7 @@ where
 pub fn lex<
     'a,
     O: LispOp<O, T, Y, S> + 'a,
-    T: Default + LispTerm<O, T, Y, S> + 'static,
+    T: LispTerm<O, T, Y, S> + 'static,
     Y: LispOp<O, T, Y, S> + 'a,
     S: Default + 'a,
 >(
@@ -197,7 +206,7 @@ pub fn lex<
             }
             let y = Y::lisp(h)?;
             let h = v.next().context("in getting the head")?;
-            if let lexpr::Value::Symbol(s) = h {
+            if let lexpr::Value::Symbol(s) | lexpr::Value::Keyword(s) = h {
                 if &**s == "loop" {
                     return Ok(Box::new(LoopOp {
                         ty: y,
@@ -261,7 +270,7 @@ pub struct Continue<'a, O, T, Y, S> {
 impl<
         'a,
         O: LispOp<O, T, Y, S> + 'a,
-        T: Default + LispTerm<O, T, Y, S> + 'static,
+        T: LispTerm<O, T, Y, S> + 'static,
         Y: LispOp<O, T, Y, S> + 'a,
         S: Default + 'a,
     > VarBuilder<O, T, Y, S, Id<Value<O, T, Y, S>>> for Continue<'a, O, T, Y, S>
@@ -274,7 +283,7 @@ impl<
         root: Id<Block<O, T, Y, S>>,
         vars: &mut [Id<Value<O, T, Y, S>>],
     ) -> anyhow::Result<(Self::Result, Id<Block<O, T, Y, S>>)> {
-        func.blocks[root].term = T::bt(BlockTarget {
+        func.blocks[root].term = Some(T::bt(BlockTarget {
             block: self.block,
             args: vars
                 .iter()
@@ -284,7 +293,7 @@ impl<
                 })
                 .collect(),
             prepend: vec![],
-        });
+        }));
         let null = func.blocks.alloc(Default::default());
         let null_val = func.add_blockparam(null, self.ty);
         return Ok((null_val, null));
@@ -300,7 +309,7 @@ pub struct Break<'a, O, T, Y, S> {
 impl<
         'a,
         O: LispOp<O, T, Y, S> + 'a,
-        T: Default + LispTerm<O, T, Y, S> + 'static,
+        T: LispTerm<O, T, Y, S> + 'static,
         Y: LispOp<O, T, Y, S> + 'a,
         S: Default + 'a,
     > VarBuilder<O, T, Y, S, Id<Value<O, T, Y, S>>> for Break<'a, O, T, Y, S>
@@ -320,7 +329,7 @@ impl<
             b = Some(a);
         }
         let a = b.context("empty loops not supported")?;
-        func.blocks[root].term = T::bt(BlockTarget {
+        func.blocks[root].term = Some(T::bt(BlockTarget {
             block: self.block,
             args: vars
                 .iter()
@@ -334,17 +343,17 @@ impl<
                 }))
                 .collect(),
             prepend: vec![],
-        });
+        }));
         let null = func.blocks.alloc(Default::default());
         let null_val = func.add_blockparam(null, self.ty);
         return Ok((null_val, null));
     }
 }
 pub trait TermTargetFn<'a, O, T, Y, S>:
-    FnMut(ListIter<'a>) -> anyhow::Result<EndOp<'a, O, T, Y, S>>
+    FnMut(ListIter<'a>) -> anyhow::Result<EndOp<'a, O, T, Y, S>> + 'a
 {
 }
-impl<'a, O, T, Y, S, X: FnMut(ListIter<'a>) -> anyhow::Result<EndOp<'a, O, T, Y, S>>>
+impl<'a, O, T, Y, S, X: FnMut(ListIter<'a>) -> anyhow::Result<EndOp<'a, O, T, Y, S>> + 'a>
     TermTargetFn<'a, O, T, Y, S> for X
 {
 }
@@ -362,7 +371,7 @@ pub struct Seed<'a, O, T, Y, S, X> {
 impl<
         'a,
         O: LispOp<O, T, Y, S> + 'a,
-        T: Default + LispTerm<O, T, Y, S> + 'static,
+        T: LispTerm<O, T, Y, S> + 'static,
         Y: LispOp<O, T, Y, S> + 'a,
         S: Default + 'a,
         X: LispSeed<'a, O, T, Y, S, T> + 'a,
@@ -378,7 +387,7 @@ impl<
     ) -> anyhow::Result<(Self::Result, Id<Block<O, T, Y, S>>)> {
         let next = func.blocks.alloc(Default::default());
         let stack = self.loop_stack.clone();
-        let (a, b) = Box::new(self.seed.bind(move |t| {
+        let (a, b) = Box::new(self.seed.bind(&mut move |t| {
             Ok(EndOp {
                 all: t,
                 next: next.clone(),
@@ -386,7 +395,7 @@ impl<
             })
         })?)
         .build_with_vars(func, root, vars)?;
-        func.blocks[b].term = a;
+        func.blocks[b].term = Some(a);
         for v in vars.iter_mut() {
             let w = func.opts[*v].ty().clone();
             *v = func.add_blockparam(next, w);
@@ -398,7 +407,7 @@ impl<
 impl<
         'a,
         O: LispOp<O, T, Y, S> + 'a,
-        T: Default + LispTerm<O, T, Y, S> + 'static,
+        T: LispTerm<O, T, Y, S> + 'static,
         Y: LispOp<O, T, Y, S> + 'a,
         S: Default + 'a,
     > VarBuilder<O, T, Y, S, Id<Value<O, T, Y, S>>> for EndOp<'a, O, T, Y, S>
@@ -447,7 +456,7 @@ pub struct LoopOp<'a, O, T, Y, S> {
 impl<
         'a,
         O: LispOp<O, T, Y, S> + 'a,
-        T: Default + LispTerm<O, T, Y, S> + 'static,
+        T: LispTerm<O, T, Y, S> + 'static,
         Y: LispOp<O, T, Y, S> + 'a,
         S: Default + 'a,
     > VarBuilder<O, T, Y, S, Id<Value<O, T, Y, S>>> for LoopOp<'a, O, T, Y, S>
@@ -474,7 +483,7 @@ impl<
             let w = func.opts[*v].ty().clone();
             *v = func.add_blockparam(br, w);
         }
-        func.blocks[root].term = T::bt(t);
+        func.blocks[root].term = Some(T::bt(t));
         let br2 = func.blocks.alloc(Default::default());
         let l = Loop {
             r#break: br2,
@@ -507,7 +516,7 @@ impl<
             select: Default::default(),
         });
         let w = func.add_blockparam(br2, self.ty);
-        func.blocks[s].term = T::bt(t);
+        func.blocks[s].term = Some(T::bt(t));
         return Ok((w, br2));
     }
 }
@@ -520,7 +529,7 @@ pub struct X<'a, O, T, Y, S> {
 impl<
         'a,
         O: LispOp<O, T, Y, S> + 'a,
-        T: Default + LispTerm<O, T, Y, S> + 'static,
+        T: LispTerm<O, T, Y, S> + 'static,
         Y: LispOp<O, T, Y, S> + 'a,
         S: Default + 'a,
     > VarBuilder<O, T, Y, S, Id<Value<O, T, Y, S>>> for X<'a, O, T, Y, S>

@@ -1,8 +1,11 @@
 use std::{
-    borrow::Cow, collections::{BTreeMap, BTreeSet}, f32::consts::E, hash::{DefaultHasher, Hasher}
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+    f32::consts::E,
+    hash::{DefaultHasher, Hasher},
 };
 
-use super::{ Ast, BinOp, CondType, Plat, Size, ToAst};
+use super::{Ast, BinOp, CondType, Plat, Size, ToAst};
 use id_arena::{Arena, Id};
 use indexmap::IndexMap;
 use nonempty::{nonempty, NonEmpty};
@@ -11,18 +14,16 @@ pub mod backend;
 pub mod map;
 pub mod rat;
 pub mod rat_fe;
-#[derive(Clone,Debug,Hash,PartialEq, Eq,Serialize,Deserialize)]
-pub struct Load{
-    pub size: Size
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Load {
+    pub size: Size,
 }
-#[derive(Clone,Debug,Hash,PartialEq, Eq,Serialize,Deserialize)]
-pub struct Store{
-    pub size: Size
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Store {
+    pub size: Size,
 }
-#[derive(Clone,Debug,Hash,PartialEq, Eq,Serialize,Deserialize)]
-pub struct Alloca{
-
-}
+#[derive(Clone, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Alloca {}
 use std::hash::Hash;
 pub fn calculate_hash<T: Hash>(t: &T) -> u64 {
     let mut s = DefaultHasher::new();
@@ -129,11 +130,17 @@ impl Block {
         self.insts.insert(h.clone(), i);
         return h;
     }
-    pub fn params(&self) -> usize{
-        return self.insts.iter().filter_map(|(_,b)|match b{
-            Instr::Param(a) => Some(*a),
-            _ => None
-        }).max().map(|a|a + 1).unwrap_or(0);
+    pub fn params(&self) -> usize {
+        return self
+            .insts
+            .iter()
+            .filter_map(|(_, b)| match b {
+                Instr::Param(a) => Some(*a),
+                _ => None,
+            })
+            .max()
+            .map(|a| a + 1)
+            .unwrap_or(0);
     }
 }
 impl ToAst for Block {
@@ -153,11 +160,11 @@ pub enum Instr {
     Call(ValueId, Vec<ValueId>),
     Param(usize),
     Const(u64),
-    Load(ValueId,Size),
-    Store(ValueId, ValueId,Size),
+    Load(ValueId, Size),
+    Store(ValueId, ValueId, Size),
     Alloca(ValueId),
     Plat(Plat, Vec<ValueId>),
-    Data(Cow<'static,[u8]>),
+    Data(Cow<'static, [u8]>),
     OS,
 }
 
@@ -171,8 +178,8 @@ impl ValMap for Instr {
                     .map(|a| val(a.clone()))
                     .collect::<Result<Vec<_>, _>>()?,
             ),
-            Instr::Load(a,b) => Instr::Load(val(a.clone())?,b.clone()),
-            Instr::Store(a, b,c) => Instr::Store(val(a.clone())?, val(b.clone())?,c.clone()),
+            Instr::Load(a, b) => Instr::Load(val(a.clone())?, b.clone()),
+            Instr::Store(a, b, c) => Instr::Store(val(a.clone())?, val(b.clone())?, c.clone()),
             Instr::Alloca(a) => Instr::Alloca(val(a.clone())?),
             Instr::Plat(p, b) => Instr::Plat(
                 p.clone(),
@@ -194,8 +201,10 @@ impl ToAst for Instr {
             }
             Instr::Param(a) => Ast::Var(format!("${a}")),
             Instr::Const(a) => Ast::Const(a.clone()),
-            Instr::Load(a,b) => Ast::Load(Box::new(a.to_ast()),b.clone()),
-            Instr::Store(a, b,c) => Ast::Store(Box::new(a.to_ast()), Box::new(b.to_ast()),c.clone()),
+            Instr::Load(a, b) => Ast::Load(Box::new(a.to_ast()), b.clone()),
+            Instr::Store(a, b, c) => {
+                Ast::Store(Box::new(a.to_ast()), Box::new(b.to_ast()), c.clone())
+            }
             Instr::Alloca(a) => Ast::Alloca(Box::new(a.to_ast())),
             Instr::Plat(a, l) => Ast::Plat(a.clone(), l.iter().map(|a| a.to_ast()).collect()),
             Instr::OS => Ast::OS,

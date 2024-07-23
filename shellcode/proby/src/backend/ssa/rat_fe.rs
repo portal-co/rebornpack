@@ -208,7 +208,7 @@ pub fn copy_block<
     match &old.blocks[k].term {
         super::Term::ReturnCall(_, _) => todo!(),
         super::Term::Br(t) => {
-            new.blocks[tk].term = T::push(target(t)).map_right(|_| ()).unwrap_left();
+            new.blocks[tk].term = Some(T::push(target(t)).map_right(|_| ()).unwrap_left());
         }
         super::Term::BrIf {
             cond,
@@ -228,7 +228,7 @@ pub fn copy_block<
                 PhantomData,
             ));
             new.blocks[tk].insts.push(v);
-            new.blocks[tk].term = T::push(If {
+            new.blocks[tk].term = Some(T::push(If {
                 val: Use {
                     value: v,
                     select: S::default(),
@@ -237,7 +237,7 @@ pub fn copy_block<
                 r#else: Some(target(if_false)),
             })
             .map_right(|_| ())
-            .unwrap_left();
+            .unwrap_left());
         }
         super::Term::Ret(_) => todo!(),
         super::Term::Null => {}

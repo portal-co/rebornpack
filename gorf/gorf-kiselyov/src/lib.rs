@@ -1,4 +1,3 @@
-
 use lambda_calculus::Term;
 
 // use crate::underload::{Underload, K, underload_parser};
@@ -23,7 +22,7 @@ pub enum RealSki {
 pub fn ra(a: RealSki, b: RealSki) -> RealSki {
     return RealSki::RealApp(Box::new(a), Box::new(b));
 }
-impl From<Ski> for RealSki{
+impl From<Ski> for RealSki {
     fn from(a: Ski) -> RealSki {
         match a {
             Ski::S => RealSki::S,
@@ -50,7 +49,7 @@ impl From<Ski> for RealSki{
     }
 }
 impl RealSki {
-    pub fn convert_default(t: Term) -> RealSki{
+    pub fn convert_default(t: Term) -> RealSki {
         return Self::from(Ski::convert_default(t));
     }
     // pub fn to_underload_str(self) -> String{

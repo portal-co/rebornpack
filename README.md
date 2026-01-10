@@ -1,13 +1,14 @@
 # rebornpack
 
 ## Description
-Project rebornpack
+"Reborn Pack". A workspace containing `ratpack`, `gorf`, and `jetski`. Seems to be a collection of runtime and compilation tools.
 
 ## Goals
-- [ ] Add project goals
+- [ ] Package core runtime tools
+- [ ] Support WASM/WASI execution
 
 ## Progress
-- [ ] Initial setup
+- [ ] Workspace setup with extensive dependencies
 
 ---
 *AI assisted*
